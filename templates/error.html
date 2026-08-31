@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>發生錯誤</h2>
+  <p>{{ message }}</p>
+  <a href="{{ url_for('dashboard') }}">回總覽</a>
+</div>
+{% endblock %}

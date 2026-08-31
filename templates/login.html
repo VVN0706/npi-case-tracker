@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登入 - NPI 案子追蹤</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-body">
+<form class="login-box" method="post">
+  <h1>NPI 案子追蹤</h1>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <label>帳號</label>
+  <input type="text" name="username" autofocus required>
+  <label>密碼</label>
+  <input type="password" name="password" required>
+  <button type="submit">登入</button>
+</form>
+</body>
+</html>

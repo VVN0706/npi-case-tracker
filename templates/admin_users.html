@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}使用者管理 - NPI 案子追蹤{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>新增工程師帳號</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" class="inline-form">
+    <input type="text" name="username" placeholder="帳號" required>
+    <input type="text" name="display_name" placeholder="姓名" required>
+    <input type="password" name="password" placeholder="密碼 (至少4碼)" required>
+    <label class="checkbox-label"><input type="checkbox" name="is_admin"> 管理員</label>
+    <button type="submit">新增</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>所有使用者</h2>
+  <table>
+    <thead><tr><th>帳號</th><th>姓名</th><th>權限</th><th>狀態</th><th>重設密碼</th><th></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.username }}</td>
+        <td>{{ u.display_name }}</td>
+        <td>{{ '管理員' if u.is_admin else '工程師' }}</td>
+        <td>{{ '啟用中' if u.active else '已停用' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_reset_password', user_id=u.id) }}" class="inline-form">
+            <input type="password" name="new_password" placeholder="新密碼" style="width:120px">
+            <button type="submit">重設</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}">
+            <button type="submit" class="{{ 'btn-danger' if u.active else '' }}">{{ '停用' if u.active else '啟用' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}案子列表 - NPI 案子追蹤{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div class="filter-row">
+    <form method="get" class="filters">
+      <select name="owner" onchange="this.form.submit()">
+        <option value="">全部工程師</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {{ 'selected' if owner_filter|string == u.id|string }}>{{ u.display_name }}</option>
+        {% endfor %}
+      </select>
+      <select name="status" onchange="this.form.submit()">
+        <option value="">全部狀態</option>
+        {% for s in statuses %}
+        <option value="{{ s.id }}" {{ 'selected' if status_filter|string == s.id|string }}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+      {% if owner_filter or status_filter %}
+      <a href="{{ url_for('case_list') }}" class="link-btn">清除篩選</a>
+      {% endif %}
+    </form>
+    <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案子</a>
+  </div>
+
+  {% if cases %}
+  <table>
+    <thead>
+      <tr><th>案名</th><th>負責工程師</th><th>客戶</th><th>優先度</th><th>截止日</th><th>進度</th><th>狀態</th><th>最新備註</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr>
+        <td><a href="{{ url_for('case_edit', case_id=c.id) }}">{{ c.title }}</a></td>
+        <td>{{ c.owner_name }}</td>
+        <td>{{ c.customer or '' }}</td>
+        <td><span class="priority priority-{{ c.priority }}">{{ c.priority }}</span></td>
+        <td>{{ c.due_date or '' }}</td>
+        <td>
+          <div class="progress-bar"><div class="progress-fill" style="width: {{ c.progress }}%"></div></div>
+          <span class="progress-text">{{ c.progress }}%</span>
+        </td>
+        <td>{% if c.status_name %}<span class="pill" style="background: {{ c.status_color }}">{{ c.status_name }}</span>{% endif %}</td>
+        <td class="note-cell">{{ c.note or '' }}</td>
+        <td><a href="{{ url_for('case_edit', case_id=c.id) }}">編輯</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">沒有符合條件的案子</p>
+  {% endif %}
+</div>
+
+{% endblock %}

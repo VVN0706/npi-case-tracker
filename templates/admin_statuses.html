@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}狀態管理 - NPI 案子追蹤{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>新增狀態</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" class="inline-form">
+    <input type="text" name="name" placeholder="狀態名稱" required>
+    <input type="color" name="color" value="#6b7280">
+    <button type="submit">新增</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>目前的狀態（依排序）</h2>
+  <table>
+    <thead><tr><th>狀態</th><th>顏色</th><th>使用中案子數</th><th></th></tr></thead>
+    <tbody>
+      {% for s in statuses %}
+      <tr>
+        <td>
+          <form method="post" action="{{ url_for('admin_status_edit', status_id=s.id) }}" class="inline-form">
+            <input type="text" name="name" value="{{ s.name }}" style="width:120px">
+            <input type="color" name="color" value="{{ s.color }}">
+            <button type="submit">更新</button>
+          </form>
+        </td>
+        <td><span class="pill" style="background: {{ s.color }}">{{ s.name }}</span></td>
+        <td>{{ s.case_count }}</td>
+        <td>
+          <form method="post" action="{{ url_for('admin_status_delete', status_id=s.id) }}" onsubmit="return confirm('確定要刪除這個狀態嗎？（若有案子使用中將無法刪除）');">
+            <button type="submit" class="btn-danger">刪除</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
