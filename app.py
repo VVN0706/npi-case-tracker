@@ -421,16 +421,38 @@ def admin_toggle_user(user_id):
     return redirect(url_for('admin_users'))
 
 
-@app.route('/admin/users/<int:user_id>/department', methods=['POST'])
+@app.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @admin_required
-def admin_set_department(user_id):
+def admin_user_edit(user_id):
     conn = get_db()
-    department = request.form.get('department', '')
-    if department in DEPARTMENTS or department == '':
-        conn.execute('UPDATE users SET department=? WHERE id=?', (department, user_id))
-        conn.execute('UPDATE cases SET department=? WHERE owner_id=?', (department, user_id))
-        conn.commit()
-    return redirect(url_for('admin_users'))
+    user = conn.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone()
+    if not user:
+        return render_template('error.html', message='找不到這個使用者'), 404
+
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        display_name = request.form.get('display_name', '').strip()
+        department = request.form.get('department', '')
+        is_admin = 1 if request.form.get('is_admin') else 0
+        if not username or not display_name:
+            error = '請填寫帳號、姓名'
+        elif department not in DEPARTMENTS and department != '':
+            error = '部門不正確'
+        else:
+            try:
+                conn.execute(
+                    'UPDATE users SET username=?, display_name=?, department=?, is_admin=? WHERE id=?',
+                    (username, display_name, department, is_admin, user_id))
+                conn.execute('UPDATE cases SET department=? WHERE owner_id=?', (department, user_id))
+                conn.commit()
+                return redirect(url_for('admin_users'))
+            except sqlite3.IntegrityError:
+                error = '這個帳號已經存在'
+        user = {**dict(user), 'username': username, 'display_name': display_name,
+                'department': department, 'is_admin': is_admin}
+
+    return render_template('admin_user_edit.html', user=user, error=error, departments=DEPARTMENTS)
 
 
 @app.route('/admin/users/<int:user_id>/reset_password', methods=['POST'])

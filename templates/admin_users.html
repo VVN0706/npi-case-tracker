@@ -23,24 +23,16 @@
 <div class="card">
   <h2>所有使用者</h2>
   <table>
-    <thead><tr><th>帳號</th><th>姓名</th><th>部門</th><th>權限</th><th>狀態</th><th>重設密碼</th><th></th></tr></thead>
+    <thead><tr><th>帳號</th><th>姓名</th><th>部門</th><th>權限</th><th>狀態</th><th></th><th>重設密碼</th><th></th></tr></thead>
     <tbody>
       {% for u in users %}
       <tr>
         <td>{{ u.username }}</td>
         <td>{{ u.display_name }}</td>
-        <td>
-          <form method="post" action="{{ url_for('admin_set_department', user_id=u.id) }}" class="inline-form">
-            <select name="department" onchange="this.form.submit()">
-              <option value="" {{ 'selected' if not u.department }}>（無部門）</option>
-              {% for d in departments %}
-              <option value="{{ d }}" {{ 'selected' if u.department == d }}>{{ d }}</option>
-              {% endfor %}
-            </select>
-          </form>
-        </td>
+        <td>{{ u.department or '' }}</td>
         <td>{{ '管理員' if u.is_admin else '工程師' }}</td>
         <td>{{ '啟用中' if u.active else '已停用' }}</td>
+        <td><a href="{{ url_for('admin_user_edit', user_id=u.id) }}">編輯</a></td>
         <td>
           <form method="post" action="{{ url_for('admin_reset_password', user_id=u.id) }}" class="inline-form">
             <input type="password" name="new_password" placeholder="新密碼" style="width:120px">
