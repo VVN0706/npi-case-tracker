@@ -17,7 +17,7 @@
       <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案件</a>
       {% if g.current_user.is_admin %}
       <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint == 'admin_users' }}">使用者管理</a>
-      <a href="{{ url_for('admin_statuses') }}" class="{{ 'active' if request.endpoint == 'admin_statuses' }}">狀態管理</a>
+      <a href="{{ url_for('admin_stages') }}" class="{{ 'active' if request.endpoint == 'admin_stages' }}">階段管理</a>
       {% endif %}
     </nav>
   </div>

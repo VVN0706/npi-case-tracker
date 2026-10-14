@@ -12,7 +12,7 @@ DB_PATH = os.path.join(BASE_DIR, 'case_tracker.db')
 
 app = Flask(__name__)
 
-DEFAULT_STATUSES = [
+DEFAULT_STAGES = [
     ('開案 Kick-off', '#6b7280', '收到客戶 SWR 或開案通知，案件正式成立'),
     ('圖面 & Layout 確認', '#0ea5e9', 'BD 圖 / SBT Layout / LF 圖面經客戶書面確認'),
     ('材料到位', '#3b82f6', '基板、導線架、線材、compound 等關鍵料全數入庫'),
@@ -24,6 +24,15 @@ DEFAULT_STATUSES = [
 ]
 PRIORITIES = ['高', '中', '低']
 DEPARTMENTS = ['2620', '2640', '2650']
+STAGE_STATUSES = ['未開始', '進行中', '延遲', '卡關', '完成', 'NA']
+STAGE_STATUS_COLORS = {
+    '未開始': '#9ca3af',
+    '進行中': '#3b82f6',
+    '延遲': '#f59e0b',
+    '卡關': '#dc2626',
+    '完成': '#16a34a',
+    'NA': '#d1d5db',
+}
 
 
 def get_db():
@@ -51,9 +60,23 @@ def _get_or_create_secret_key(conn):
     return key
 
 
+def _sync_case_stage_rows(conn):
+    """Make sure every case has a case_stage_status row for every stage (defaults to 未開始)."""
+    conn.execute('''
+        INSERT OR IGNORE INTO case_stage_status (case_id, stage_id, status)
+        SELECT c.id, s.id, '未開始' FROM cases c CROSS JOIN stages s
+    ''')
+
+
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
+
+        table_names = {r['name'] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'statuses' in table_names and 'stages' not in table_names:
+            conn.execute('ALTER TABLE statuses RENAME TO stages')
+
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -71,7 +94,7 @@ def init_db():
                 created_at TEXT DEFAULT (datetime('now'))
             );
 
-            CREATE TABLE IF NOT EXISTS statuses (
+            CREATE TABLE IF NOT EXISTS stages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 color TEXT NOT NULL DEFAULT '#6b7280',
@@ -88,11 +111,17 @@ def init_db():
                 priority TEXT NOT NULL DEFAULT '中',
                 due_date TEXT,
                 progress INTEGER NOT NULL DEFAULT 0,
-                status_id INTEGER REFERENCES statuses(id),
                 note TEXT,
                 created_by INTEGER REFERENCES users(id),
                 created_at TEXT DEFAULT (datetime('now')),
                 updated_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS case_stage_status (
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT '未開始',
+                PRIMARY KEY (case_id, stage_id)
             );
         ''')
 
@@ -103,9 +132,9 @@ def init_db():
         if 'department' not in case_cols:
             conn.execute("ALTER TABLE cases ADD COLUMN department TEXT NOT NULL DEFAULT ''")
 
-        if conn.execute('SELECT COUNT(*) FROM statuses').fetchone()[0] == 0:
-            for i, (name, color, description) in enumerate(DEFAULT_STATUSES):
-                conn.execute('INSERT INTO statuses (name, color, description, sort_order) VALUES (?,?,?,?)',
+        if conn.execute('SELECT COUNT(*) FROM stages').fetchone()[0] == 0:
+            for i, (name, color, description) in enumerate(DEFAULT_STAGES):
+                conn.execute('INSERT INTO stages (name, color, description, sort_order) VALUES (?,?,?,?)',
                              (name, color, description, i))
 
         if conn.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
@@ -113,6 +142,9 @@ def init_db():
                 'INSERT INTO users (username, password_hash, display_name, is_admin) VALUES (?,?,?,1)',
                 ('admin', generate_password_hash('admin123'), '管理員')
             )
+
+        conn.execute('PRAGMA foreign_keys = ON')
+        _sync_case_stage_rows(conn)
 
         app.secret_key = _get_or_create_secret_key(conn)
         conn.commit()
@@ -205,6 +237,51 @@ def change_password():
     return render_template('change_password.html', error=error, ok=ok)
 
 
+# ── Case progress helpers ──────────────────────────────────────────────────
+
+def _case_stage_rows(conn, case_ids):
+    """{case_id: [ {stage_id, name, color, sort_order, status}, ... ]} ordered by stage sort_order."""
+    if not case_ids:
+        return {}
+    placeholders = ','.join('?' * len(case_ids))
+    rows = conn.execute(f'''
+        SELECT css.case_id, s.id AS stage_id, s.name, s.color, s.sort_order, css.status
+        FROM case_stage_status css
+        JOIN stages s ON s.id = css.stage_id
+        WHERE css.case_id IN ({placeholders})
+        ORDER BY css.case_id, s.sort_order
+    ''', case_ids).fetchall()
+    result = {}
+    for r in rows:
+        result.setdefault(r['case_id'], []).append(r)
+    return result
+
+
+def _case_progress(stage_rows):
+    """Summarize one case's stage rows: current stage, blocked count, overall completion."""
+    current = None
+    blocked = 0
+    all_done = True
+    for r in stage_rows:
+        if r['status'] in ('卡關', '延遲'):
+            blocked += 1
+        if r['status'] not in ('完成', 'NA'):
+            all_done = False
+            if current is None:
+                current = r
+    if current is None and stage_rows:
+        current = stage_rows[-1]
+    return {
+        'current_stage_id': current['stage_id'] if current else None,
+        'current_stage_name': current['name'] if current else None,
+        'current_stage_color': current['color'] if current else None,
+        'current_status': current['status'] if current else None,
+        'current_status_color': STAGE_STATUS_COLORS.get(current['status']) if current else None,
+        'blocked_count': blocked,
+        'all_done': all_done and bool(stage_rows),
+    }
+
+
 # ── Dashboard ────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -213,52 +290,77 @@ def dashboard():
     conn = get_db()
     today = date.today().isoformat()
 
-    status_counts = conn.execute('''
-        SELECT s.id, s.name, s.color, COUNT(c.id) AS cnt
-        FROM statuses s
-        LEFT JOIN cases c ON c.status_id = s.id
-        GROUP BY s.id ORDER BY s.sort_order
+    stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
+    all_cases = conn.execute('''
+        SELECT c.*, u.display_name AS owner_name
+        FROM cases c JOIN users u ON u.id = c.owner_id
     ''').fetchall()
+    case_ids = [c['id'] for c in all_cases]
+    stage_rows_map = _case_stage_rows(conn, case_ids)
 
-    total_cases = conn.execute('SELECT COUNT(*) FROM cases').fetchone()[0]
+    stage_cnt = {s['id']: 0 for s in stages}
+    done_count = 0
+    overdue = []
+    blocked_cases = []
+    progress_by_case = {}
 
-    done_status = conn.execute("SELECT id FROM statuses WHERE name='PNR / 量產轉移'").fetchone()
-    done_id = done_status['id'] if done_status else -1
+    for c in all_cases:
+        rows = stage_rows_map.get(c['id'], [])
+        summary = _case_progress(rows)
+        progress_by_case[c['id']] = summary
+        if summary['all_done']:
+            done_count += 1
+        elif summary['current_stage_id'] is not None:
+            stage_cnt[summary['current_stage_id']] = stage_cnt.get(summary['current_stage_id'], 0) + 1
+        if c['due_date'] and not summary['all_done'] and c['due_date'] < today:
+            overdue.append({**dict(c), **summary})
+        for r in rows:
+            if r['status'] in ('卡關', '延遲'):
+                blocked_cases.append({
+                    'case_id': c['id'], 'title': c['title'], 'owner_name': c['owner_name'],
+                    'stage_name': r['name'], 'stage_color': r['color'],
+                    'status': r['status'], 'status_color': STAGE_STATUS_COLORS.get(r['status']),
+                })
 
-    overdue = conn.execute('''
-        SELECT c.*, u.display_name AS owner_name, s.name AS status_name, s.color AS status_color
-        FROM cases c
-        JOIN users u ON u.id = c.owner_id
-        LEFT JOIN statuses s ON s.id = c.status_id
-        WHERE c.due_date IS NOT NULL AND c.due_date != '' AND c.due_date < ?
-          AND (c.status_id IS NULL OR c.status_id != ?)
-        ORDER BY c.due_date
-    ''', (today, done_id)).fetchall()
+    overdue.sort(key=lambda c: c['due_date'])
+    blocked_case_count = len({b['case_id'] for b in blocked_cases})
 
-    by_engineer = conn.execute('''
-        SELECT u.id, u.display_name,
-               COUNT(c.id) AS total,
-               SUM(CASE WHEN c.status_id = ? THEN 1 ELSE 0 END) AS done_cnt,
-               ROUND(AVG(c.progress), 0) AS avg_progress
-        FROM users u
-        LEFT JOIN cases c ON c.owner_id = u.id
-        WHERE u.active = 1
-        GROUP BY u.id
-        ORDER BY total DESC, u.display_name
-    ''', (done_id,)).fetchall()
+    stage_counts = [{'id': s['id'], 'name': s['name'], 'color': s['color'], 'cnt': stage_cnt.get(s['id'], 0)}
+                    for s in stages]
 
-    recent = conn.execute('''
-        SELECT c.*, u.display_name AS owner_name, s.name AS status_name, s.color AS status_color
-        FROM cases c
-        JOIN users u ON u.id = c.owner_id
-        LEFT JOIN statuses s ON s.id = c.status_id
+    engineer_stats = {}
+    for u in conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall():
+        engineer_stats[u['id']] = {'id': u['id'], 'display_name': u['display_name'],
+                                    'total': 0, 'done_cnt': 0, 'progress_sum': 0}
+    for c in all_cases:
+        st = engineer_stats.get(c['owner_id'])
+        if st is None:
+            continue
+        st['total'] += 1
+        st['progress_sum'] += c['progress']
+        if progress_by_case[c['id']]['all_done']:
+            st['done_cnt'] += 1
+    by_engineer = []
+    for st in engineer_stats.values():
+        avg = round(st['progress_sum'] / st['total']) if st['total'] else 0
+        by_engineer.append({**st, 'avg_progress': avg})
+    by_engineer.sort(key=lambda x: (-x['total'], x['display_name']))
+
+    recent_raw = conn.execute('''
+        SELECT c.*, u.display_name AS owner_name
+        FROM cases c JOIN users u ON u.id = c.owner_id
         ORDER BY c.updated_at DESC LIMIT 10
     ''').fetchall()
+    recent = [{**dict(c), **progress_by_case.get(c['id'], _case_progress(stage_rows_map.get(c['id'], [])))}
+              for c in recent_raw]
 
     return render_template('dashboard.html',
-                            status_counts=status_counts,
-                            total_cases=total_cases,
+                            stage_counts=stage_counts,
+                            total_cases=len(all_cases),
+                            done_count=done_count,
                             overdue=overdue,
+                            blocked_cases=blocked_cases,
+                            blocked_case_count=blocked_case_count,
                             by_engineer=by_engineer,
                             recent=recent,
                             today=today)
@@ -271,43 +373,55 @@ def dashboard():
 def case_list():
     conn = get_db()
     owner_filter = request.args.get('owner', '')
-    status_filter = request.args.get('status', '')
+    stage_filter = request.args.get('stage', '')
     department_filter = request.args.get('department', '')
 
     query = '''
-        SELECT c.*, u.display_name AS owner_name, s.name AS status_name, s.color AS status_color
+        SELECT c.*, u.display_name AS owner_name
         FROM cases c
         JOIN users u ON u.id = c.owner_id
-        LEFT JOIN statuses s ON s.id = c.status_id
         WHERE 1=1
     '''
     params = []
     if owner_filter:
         query += ' AND c.owner_id = ?'
         params.append(owner_filter)
-    if status_filter:
-        query += ' AND c.status_id = ?'
-        params.append(status_filter)
     if department_filter:
         query += ' AND c.department = ?'
         params.append(department_filter)
     query += ' ORDER BY c.updated_at DESC'
 
-    cases = conn.execute(query, params).fetchall()
-    users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
-    statuses = conn.execute('SELECT * FROM statuses ORDER BY sort_order').fetchall()
+    raw_cases = conn.execute(query, params).fetchall()
+    stage_rows_map = _case_stage_rows(conn, [c['id'] for c in raw_cases])
 
-    return render_template('case_list.html', cases=cases, users=users, statuses=statuses,
+    cases = []
+    for c in raw_cases:
+        summary = _case_progress(stage_rows_map.get(c['id'], []))
+        if stage_filter and str(summary.get('current_stage_id')) != stage_filter:
+            continue
+        cases.append({**dict(c), **summary})
+
+    users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
+    stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
+
+    return render_template('case_list.html', cases=cases, users=users, stages=stages,
                             departments=DEPARTMENTS,
-                            owner_filter=owner_filter, status_filter=status_filter,
+                            owner_filter=owner_filter, stage_filter=stage_filter,
                             department_filter=department_filter)
 
 
 def _case_form_context(case=None):
     conn = get_db()
     users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
-    statuses = conn.execute('SELECT * FROM statuses ORDER BY sort_order').fetchall()
-    return dict(case=case, users=users, statuses=statuses, priorities=PRIORITIES)
+    stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
+    stage_status_map = {}
+    if case:
+        rows = conn.execute('SELECT stage_id, status FROM case_stage_status WHERE case_id=?',
+                             (case['id'],)).fetchall()
+        stage_status_map = {r['stage_id']: r['status'] for r in rows}
+    return dict(case=case, users=users, stages=stages, priorities=PRIORITIES,
+                stage_statuses=STAGE_STATUSES, stage_status_map=stage_status_map,
+                stage_status_colors=STAGE_STATUS_COLORS)
 
 
 def _user_department(conn, user_id):
@@ -327,14 +441,15 @@ def case_new():
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context()), 400
         department = _user_department(conn, owner_id)
-        conn.execute('''
-            INSERT INTO cases (title, owner_id, department, customer, priority, due_date, progress, status_id, note, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+        cur = conn.execute('''
+            INSERT INTO cases (title, owner_id, department, customer, priority, due_date, progress, note, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?)
         ''', (title, owner_id, department, request.form.get('customer', ''), request.form.get('priority', '中'),
               request.form.get('due_date') or None, int(request.form.get('progress') or 0),
-              request.form.get('status_id') or None, request.form.get('note', ''), session['user_id']))
+              request.form.get('note', ''), session['user_id']))
+        _sync_case_stage_rows(conn)
         conn.commit()
-        return redirect(url_for('case_list'))
+        return redirect(url_for('case_edit', case_id=cur.lastrowid))
     return render_template('case_form.html', **_case_form_context())
 
 
@@ -358,11 +473,17 @@ def case_edit(case_id):
         department = _user_department(conn, owner_id)
         conn.execute('''
             UPDATE cases SET title=?, owner_id=?, department=?, customer=?, priority=?, due_date=?,
-                progress=?, status_id=?, note=?, updated_at=datetime('now')
+                progress=?, note=?, updated_at=datetime('now')
             WHERE id=?
         ''', (title, owner_id, department, request.form.get('customer', ''), request.form.get('priority', '中'),
               request.form.get('due_date') or None, int(request.form.get('progress') or 0),
-              request.form.get('status_id') or None, request.form.get('note', ''), case_id))
+              request.form.get('note', ''), case_id))
+
+        for s in conn.execute('SELECT id FROM stages').fetchall():
+            value = request.form.get(f'stage_status_{s["id"]}')
+            if value in STAGE_STATUSES:
+                conn.execute('UPDATE case_stage_status SET status=? WHERE case_id=? AND stage_id=?',
+                             (value, case_id, s['id']))
         conn.commit()
         return redirect(url_for('case_list'))
 
@@ -467,11 +588,11 @@ def admin_reset_password(user_id):
     return redirect(url_for('admin_users'))
 
 
-# ── Admin: statuses ──────────────────────────────────────────────────────
+# ── Admin: stages ────────────────────────────────────────────────────────
 
-@app.route('/admin/statuses', methods=['GET', 'POST'])
+@app.route('/admin/stages', methods=['GET', 'POST'])
 @admin_required
-def admin_statuses():
+def admin_stages():
     conn = get_db()
     error = None
     if request.method == 'POST':
@@ -479,47 +600,51 @@ def admin_statuses():
         color = request.form.get('color') or '#6b7280'
         description = request.form.get('description', '').strip()
         if not name:
-            error = '狀態名稱為必填'
+            error = '階段名稱為必填'
         else:
-            max_order = conn.execute('SELECT MAX(sort_order) AS m FROM statuses').fetchone()['m'] or 0
+            max_order = conn.execute('SELECT MAX(sort_order) AS m FROM stages').fetchone()['m'] or 0
             try:
-                conn.execute('INSERT INTO statuses (name, color, description, sort_order) VALUES (?,?,?,?)',
+                conn.execute('INSERT INTO stages (name, color, description, sort_order) VALUES (?,?,?,?)',
                              (name, color, description, max_order + 1))
+                _sync_case_stage_rows(conn)
                 conn.commit()
             except sqlite3.IntegrityError:
-                error = '這個狀態已經存在'
-    statuses = conn.execute('''
-        SELECT s.*, COUNT(c.id) AS case_count
-        FROM statuses s
-        LEFT JOIN cases c ON c.status_id = s.id
+                error = '這個階段已經存在'
+    stages = conn.execute('''
+        SELECT s.*,
+               COALESCE(SUM(CASE WHEN css.status != '未開始' THEN 1 ELSE 0 END), 0) AS active_case_count
+        FROM stages s
+        LEFT JOIN case_stage_status css ON css.stage_id = s.id
         GROUP BY s.id ORDER BY s.sort_order
     ''').fetchall()
-    return render_template('admin_statuses.html', statuses=statuses, error=error)
+    return render_template('admin_stages.html', stages=stages, error=error)
 
 
-@app.route('/admin/statuses/<int:status_id>/edit', methods=['POST'])
+@app.route('/admin/stages/<int:stage_id>/edit', methods=['POST'])
 @admin_required
-def admin_status_edit(status_id):
+def admin_stage_edit(stage_id):
     conn = get_db()
     name = request.form.get('name', '').strip()
     color = request.form.get('color') or '#6b7280'
     description = request.form.get('description', '').strip()
     if name:
-        conn.execute('UPDATE statuses SET name=?, color=?, description=? WHERE id=?',
-                     (name, color, description, status_id))
+        conn.execute('UPDATE stages SET name=?, color=?, description=? WHERE id=?',
+                     (name, color, description, stage_id))
         conn.commit()
-    return redirect(url_for('admin_statuses'))
+    return redirect(url_for('admin_stages'))
 
 
-@app.route('/admin/statuses/<int:status_id>/delete', methods=['POST'])
+@app.route('/admin/stages/<int:stage_id>/delete', methods=['POST'])
 @admin_required
-def admin_status_delete(status_id):
+def admin_stage_delete(stage_id):
     conn = get_db()
-    in_use = conn.execute('SELECT COUNT(*) FROM cases WHERE status_id=?', (status_id,)).fetchone()[0]
+    in_use = conn.execute(
+        "SELECT COUNT(*) FROM case_stage_status WHERE stage_id=? AND status!='未開始'",
+        (stage_id,)).fetchone()[0]
     if in_use == 0:
-        conn.execute('DELETE FROM statuses WHERE id=?', (status_id,))
+        conn.execute('DELETE FROM stages WHERE id=?', (stage_id,))
         conn.commit()
-    return redirect(url_for('admin_statuses'))
+    return redirect(url_for('admin_stages'))
 
 
 if __name__ == '__main__':

@@ -11,10 +11,10 @@
         <option value="{{ u.id }}" {{ 'selected' if owner_filter|string == u.id|string }}>{{ u.display_name }}</option>
         {% endfor %}
       </select>
-      <select name="status" onchange="this.form.submit()">
-        <option value="">全部狀態</option>
-        {% for s in statuses %}
-        <option value="{{ s.id }}" {{ 'selected' if status_filter|string == s.id|string }}>{{ s.name }}</option>
+      <select name="stage" onchange="this.form.submit()">
+        <option value="">全部階段</option>
+        {% for s in stages %}
+        <option value="{{ s.id }}" {{ 'selected' if stage_filter|string == s.id|string }}>{{ s.name }}</option>
         {% endfor %}
       </select>
       <select name="department" onchange="this.form.submit()">
@@ -23,7 +23,7 @@
         <option value="{{ d }}" {{ 'selected' if department_filter == d }}>{{ d }}</option>
         {% endfor %}
       </select>
-      {% if owner_filter or status_filter or department_filter %}
+      {% if owner_filter or stage_filter or department_filter %}
       <a href="{{ url_for('case_list') }}" class="link-btn">清除篩選</a>
       {% endif %}
     </form>
@@ -33,7 +33,7 @@
   {% if cases %}
   <table>
     <thead>
-      <tr><th>案名</th><th>負責工程師</th><th>部門</th><th>客戶</th><th>優先度</th><th>截止日</th><th>進度</th><th>狀態</th><th>最新備註</th><th></th></tr>
+      <tr><th>案名</th><th>負責工程師</th><th>部門</th><th>客戶</th><th>優先度</th><th>截止日</th><th>進度</th><th>目前階段</th><th>最新備註</th><th></th></tr>
     </thead>
     <tbody>
       {% for c in cases %}
@@ -48,7 +48,17 @@
           <div class="progress-bar"><div class="progress-fill" style="width: {{ c.progress }}%"></div></div>
           <span class="progress-text">{{ c.progress }}%</span>
         </td>
-        <td>{% if c.status_name %}<span class="pill" style="background: {{ c.status_color }}">{{ c.status_name }}</span>{% endif %}</td>
+        <td>
+          {% if c.all_done %}
+          <span class="pill" style="background: #16a34a">已全部完成</span>
+          {% elif c.current_stage_name %}
+          <span class="pill" style="background: {{ c.current_stage_color }}">{{ c.current_stage_name }}</span>
+          <span class="pill" style="background: {{ c.current_status_color }}">{{ c.current_status }}</span>
+          {% endif %}
+          {% if c.blocked_count %}
+          <span class="danger" title="有 {{ c.blocked_count }} 個階段延遲或卡關">⚠ {{ c.blocked_count }}</span>
+          {% endif %}
+        </td>
         <td class="note-cell">{{ c.note or '' }}</td>
         <td><a href="{{ url_for('case_edit', case_id=c.id) }}">編輯</a></td>
       </tr>

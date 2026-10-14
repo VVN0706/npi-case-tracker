@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
-{% block title %}狀態管理 - NPI 案件追蹤{% endblock %}
+{% block title %}階段管理 - NPI 案件追蹤{% endblock %}
 {% block content %}
 
 <div class="card">
-  <h2>新增狀態</h2>
+  <h2>新增階段</h2>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form method="post" class="inline-form">
-    <input type="text" name="name" placeholder="狀態名稱" required>
+    <input type="text" name="name" placeholder="階段名稱" required>
     <input type="color" name="color" value="#6b7280">
     <input type="text" name="description" placeholder="完成判定基準（選填）" style="flex:1; min-width:220px">
     <button type="submit">新增</button>
@@ -14,25 +14,26 @@
 </div>
 
 <div class="card">
-  <h2>目前的狀態（依排序）</h2>
+  <h2>目前的階段（依排序）</h2>
+  <p class="hint">每個案件在每個階段會各自有一個狀態（未開始/進行中/延遲/卡關/完成/NA），於案件編輯頁設定。</p>
   <table>
-    <thead><tr><th>狀態</th><th>完成判定基準</th><th>編輯</th><th>使用中案件數</th><th></th></tr></thead>
+    <thead><tr><th>階段</th><th>完成判定基準</th><th>編輯</th><th>已有進度的案件數</th><th></th></tr></thead>
     <tbody>
-      {% for s in statuses %}
+      {% for s in stages %}
       <tr>
         <td><span class="pill" style="background: {{ s.color }}">{{ s.name }}</span></td>
         <td class="note-cell">{{ s.description or '' }}</td>
         <td>
-          <form method="post" action="{{ url_for('admin_status_edit', status_id=s.id) }}" class="inline-form">
+          <form method="post" action="{{ url_for('admin_stage_edit', stage_id=s.id) }}" class="inline-form">
             <input type="text" name="name" value="{{ s.name }}" style="width:140px">
             <input type="color" name="color" value="{{ s.color }}">
             <input type="text" name="description" value="{{ s.description or '' }}" placeholder="完成判定基準" style="flex:1; min-width:200px">
             <button type="submit">更新</button>
           </form>
         </td>
-        <td>{{ s.case_count }}</td>
+        <td>{{ s.active_case_count }}</td>
         <td>
-          <form method="post" action="{{ url_for('admin_status_delete', status_id=s.id) }}" onsubmit="return confirm('確定要刪除這個狀態嗎？（若有案件使用中將無法刪除）');">
+          <form method="post" action="{{ url_for('admin_stage_delete', stage_id=s.id) }}" onsubmit="return confirm('確定要刪除這個階段嗎？（若有案件已在此階段記錄進度將無法刪除）');">
             <button type="submit" class="btn-danger">刪除</button>
           </form>
         </td>

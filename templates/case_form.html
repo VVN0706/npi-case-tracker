@@ -41,18 +41,11 @@
     <label>進度 (%)</label>
     <input type="number" name="progress" min="0" max="100" value="{{ case.progress if case else 0 }}">
 
-    <label>狀態（站別）</label>
-    <select name="status_id">
-      <option value="">（未設定）</option>
-      {% for s in statuses %}
-      <option value="{{ s.id }}" title="{{ s.description }}" {{ 'selected' if case and case.status_id == s.id }}>{{ s.name }}</option>
-      {% endfor %}
-    </select>
     <details class="stage-ref">
-      <summary>各站別「完成」判定基準</summary>
+      <summary>各階段「完成」判定基準</summary>
       <table>
         <tbody>
-          {% for s in statuses %}
+          {% for s in stages %}
           <tr>
             <td><span class="pill" style="background: {{ s.color }}">{{ s.name }}</span></td>
             <td>{{ s.description }}</td>
@@ -65,11 +58,33 @@
     <label>最新備註</label>
     <textarea name="note" rows="4">{{ case.note if case else '' }}</textarea>
 
+    {% if case %}
+    <label>各階段狀態</label>
+    <table class="stage-status-table">
+      <thead><tr><th>階段</th><th>狀態</th></tr></thead>
+      <tbody>
+        {% for s in stages %}
+        <tr>
+          <td><span class="pill" style="background: {{ s.color }}" title="{{ s.description }}">{{ s.name }}</span></td>
+          <td>
+            <select name="stage_status_{{ s.id }}" style="background: {{ stage_status_colors.get(stage_status_map.get(s.id, '未開始')) }}; color:#fff">
+              {% for st in stage_statuses %}
+              <option value="{{ st }}" {{ 'selected' if stage_status_map.get(s.id, '未開始') == st }}>{{ st }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
     <div class="form-actions">
       <button type="submit">{{ '儲存' if case else '建立案件' }}</button>
       <a href="{{ url_for('case_list') }}" class="link-btn">取消</a>
     </div>
   </form>
+
   {% if case %}
   <form method="post" action="{{ url_for('case_delete', case_id=case.id) }}" onsubmit="return confirm('確定要刪除這個案件嗎？');">
     <button type="submit" class="btn-danger">刪除</button>
