@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}案子列表 - NPI 案子追蹤{% endblock %}
+{% block title %}案件列表 - NPI 案件追蹤{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -27,7 +27,7 @@
       <a href="{{ url_for('case_list') }}" class="link-btn">清除篩選</a>
       {% endif %}
     </form>
-    <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案子</a>
+    <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案件</a>
   </div>
 
   {% if cases %}
@@ -56,7 +56,7 @@
     </tbody>
   </table>
   {% else %}
-  <p class="empty">沒有符合條件的案子</p>
+  <p class="empty">沒有符合條件的案件</p>
   {% endif %}
 </div>
 

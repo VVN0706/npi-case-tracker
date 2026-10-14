@@ -344,9 +344,9 @@ def case_edit(case_id):
     conn = get_db()
     case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
     if not case:
-        return render_template('error.html', message='找不到這個案子'), 404
+        return render_template('error.html', message='找不到這個案件'), 404
     if not can_edit_case(case):
-        return render_template('error.html', message='只有負責工程師或管理員才能修改此案子'), 403
+        return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
 
     if request.method == 'POST':
         title = request.form.get('title', '').strip()
@@ -375,9 +375,9 @@ def case_delete(case_id):
     conn = get_db()
     case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
     if not case:
-        return render_template('error.html', message='找不到這個案子'), 404
+        return render_template('error.html', message='找不到這個案件'), 404
     if not can_edit_case(case):
-        return render_template('error.html', message='只有負責工程師或管理員才能刪除此案子'), 403
+        return render_template('error.html', message='只有負責工程師或管理員才能刪除此案件'), 403
     conn.execute('DELETE FROM cases WHERE id=?', (case_id,))
     conn.commit()
     return redirect(url_for('case_list'))

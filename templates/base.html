@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{% block title %}NPI 案子追蹤{% endblock %}</title>
+<title>{% block title %}NPI 案件追蹤{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 {% if g.current_user %}
 <header class="topbar">
   <div class="topbar-left">
-    <a class="brand" href="{{ url_for('dashboard') }}">NPI 案子追蹤</a>
+    <a class="brand" href="{{ url_for('dashboard') }}">NPI 案件追蹤</a>
     <nav>
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">總覽</a>
-      <a href="{{ url_for('case_list') }}" class="{{ 'active' if request.endpoint in ['case_list','case_new','case_edit'] }}">案子列表</a>
-      <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案子</a>
+      <a href="{{ url_for('case_list') }}" class="{{ 'active' if request.endpoint in ['case_list','case_new','case_edit'] }}">案件列表</a>
+      <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案件</a>
       {% if g.current_user.is_admin %}
       <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint == 'admin_users' }}">使用者管理</a>
       <a href="{{ url_for('admin_statuses') }}" class="{{ 'active' if request.endpoint == 'admin_statuses' }}">狀態管理</a>

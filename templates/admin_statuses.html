@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}狀態管理 - NPI 案子追蹤{% endblock %}
+{% block title %}狀態管理 - NPI 案件追蹤{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -16,7 +16,7 @@
 <div class="card">
   <h2>目前的狀態（依排序）</h2>
   <table>
-    <thead><tr><th>狀態</th><th>完成判定基準</th><th>編輯</th><th>使用中案子數</th><th></th></tr></thead>
+    <thead><tr><th>狀態</th><th>完成判定基準</th><th>編輯</th><th>使用中案件數</th><th></th></tr></thead>
     <tbody>
       {% for s in statuses %}
       <tr>
@@ -32,7 +32,7 @@
         </td>
         <td>{{ s.case_count }}</td>
         <td>
-          <form method="post" action="{{ url_for('admin_status_delete', status_id=s.id) }}" onsubmit="return confirm('確定要刪除這個狀態嗎？（若有案子使用中將無法刪除）');">
+          <form method="post" action="{{ url_for('admin_status_delete', status_id=s.id) }}" onsubmit="return confirm('確定要刪除這個狀態嗎？（若有案件使用中將無法刪除）');">
             <button type="submit" class="btn-danger">刪除</button>
           </form>
         </td>

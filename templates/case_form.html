@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}{{ '編輯案子' if case else '新增案子' }} - NPI 案子追蹤{% endblock %}
+{% block title %}{{ '編輯案件' if case else '新增案件' }} - NPI 案件追蹤{% endblock %}
 {% block content %}
 
 <div class="card narrow">
-  <h2>{{ '編輯案子' if case else '新增案子' }}</h2>
+  <h2>{{ '編輯案件' if case else '新增案件' }}</h2>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form method="post">
     <label>案名 *</label>
@@ -66,12 +66,12 @@
     <textarea name="note" rows="4">{{ case.note if case else '' }}</textarea>
 
     <div class="form-actions">
-      <button type="submit">{{ '儲存' if case else '建立案子' }}</button>
+      <button type="submit">{{ '儲存' if case else '建立案件' }}</button>
       <a href="{{ url_for('case_list') }}" class="link-btn">取消</a>
     </div>
   </form>
   {% if case %}
-  <form method="post" action="{{ url_for('case_delete', case_id=case.id) }}" onsubmit="return confirm('確定要刪除這個案子嗎？');">
+  <form method="post" action="{{ url_for('case_delete', case_id=case.id) }}" onsubmit="return confirm('確定要刪除這個案件嗎？');">
     <button type="submit" class="btn-danger">刪除</button>
   </form>
   {% endif %}
