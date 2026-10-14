@@ -17,7 +17,13 @@
         <option value="{{ s.id }}" {{ 'selected' if status_filter|string == s.id|string }}>{{ s.name }}</option>
         {% endfor %}
       </select>
-      {% if owner_filter or status_filter %}
+      <select name="department" onchange="this.form.submit()">
+        <option value="">全部部門</option>
+        {% for d in departments %}
+        <option value="{{ d }}" {{ 'selected' if department_filter == d }}>{{ d }}</option>
+        {% endfor %}
+      </select>
+      {% if owner_filter or status_filter or department_filter %}
       <a href="{{ url_for('case_list') }}" class="link-btn">清除篩選</a>
       {% endif %}
     </form>
@@ -27,13 +33,14 @@
   {% if cases %}
   <table>
     <thead>
-      <tr><th>案名</th><th>負責工程師</th><th>客戶</th><th>優先度</th><th>截止日</th><th>進度</th><th>狀態</th><th>最新備註</th><th></th></tr>
+      <tr><th>案名</th><th>負責工程師</th><th>部門</th><th>客戶</th><th>優先度</th><th>截止日</th><th>進度</th><th>狀態</th><th>最新備註</th><th></th></tr>
     </thead>
     <tbody>
       {% for c in cases %}
       <tr>
         <td><a href="{{ url_for('case_edit', case_id=c.id) }}">{{ c.title }}</a></td>
         <td>{{ c.owner_name }}</td>
+        <td>{{ c.department or '' }}</td>
         <td>{{ c.customer or '' }}</td>
         <td><span class="priority priority-{{ c.priority }}">{{ c.priority }}</span></td>
         <td>{{ c.due_date or '' }}</td>

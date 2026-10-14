@@ -23,6 +23,7 @@ DEFAULT_STATUSES = [
     ('PNR / 量產轉移', '#16a34a', '量產工單投料，案件轉入量產管理'),
 ]
 PRIORITIES = ['高', '中', '低']
+DEPARTMENTS = ['2620', '2640', '2650']
 
 
 def get_db():
@@ -64,6 +65,7 @@ def init_db():
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 display_name TEXT NOT NULL,
+                department TEXT NOT NULL DEFAULT '',
                 is_admin INTEGER NOT NULL DEFAULT 0,
                 active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT DEFAULT (datetime('now'))
@@ -81,6 +83,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL,
                 owner_id INTEGER NOT NULL REFERENCES users(id),
+                department TEXT NOT NULL DEFAULT '',
                 customer TEXT,
                 priority TEXT NOT NULL DEFAULT '中',
                 due_date TEXT,
@@ -92,6 +95,13 @@ def init_db():
                 updated_at TEXT DEFAULT (datetime('now'))
             );
         ''')
+
+        user_cols = {r['name'] for r in conn.execute('PRAGMA table_info(users)')}
+        if 'department' not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN department TEXT NOT NULL DEFAULT ''")
+        case_cols = {r['name'] for r in conn.execute('PRAGMA table_info(cases)')}
+        if 'department' not in case_cols:
+            conn.execute("ALTER TABLE cases ADD COLUMN department TEXT NOT NULL DEFAULT ''")
 
         if conn.execute('SELECT COUNT(*) FROM statuses').fetchone()[0] == 0:
             for i, (name, color, description) in enumerate(DEFAULT_STATUSES):
@@ -144,6 +154,7 @@ def load_current_user():
             'id': session['user_id'],
             'username': session['username'],
             'display_name': session['display_name'],
+            'department': session.get('department', ''),
             'is_admin': bool(session.get('is_admin')),
         }
 
@@ -160,6 +171,7 @@ def login():
         session['user_id'] = user['id']
         session['username'] = user['username']
         session['display_name'] = user['display_name']
+        session['department'] = user['department']
         session['is_admin'] = bool(user['is_admin'])
         return redirect(request.args.get('next') or url_for('dashboard'))
     return render_template('login.html')
@@ -260,6 +272,7 @@ def case_list():
     conn = get_db()
     owner_filter = request.args.get('owner', '')
     status_filter = request.args.get('status', '')
+    department_filter = request.args.get('department', '')
 
     query = '''
         SELECT c.*, u.display_name AS owner_name, s.name AS status_name, s.color AS status_color
@@ -275,6 +288,9 @@ def case_list():
     if status_filter:
         query += ' AND c.status_id = ?'
         params.append(status_filter)
+    if department_filter:
+        query += ' AND c.department = ?'
+        params.append(department_filter)
     query += ' ORDER BY c.updated_at DESC'
 
     cases = conn.execute(query, params).fetchall()
@@ -282,7 +298,9 @@ def case_list():
     statuses = conn.execute('SELECT * FROM statuses ORDER BY sort_order').fetchall()
 
     return render_template('case_list.html', cases=cases, users=users, statuses=statuses,
-                            owner_filter=owner_filter, status_filter=status_filter)
+                            departments=DEPARTMENTS,
+                            owner_filter=owner_filter, status_filter=status_filter,
+                            department_filter=department_filter)
 
 
 def _case_form_context(case=None):
@@ -290,6 +308,11 @@ def _case_form_context(case=None):
     users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
     statuses = conn.execute('SELECT * FROM statuses ORDER BY sort_order').fetchall()
     return dict(case=case, users=users, statuses=statuses, priorities=PRIORITIES)
+
+
+def _user_department(conn, user_id):
+    row = conn.execute('SELECT department FROM users WHERE id=?', (user_id,)).fetchone()
+    return row['department'] if row else ''
 
 
 @app.route('/cases/new', methods=['GET', 'POST'])
@@ -303,10 +326,11 @@ def case_new():
             owner_id = session['user_id']  # non-admins can only create cases for themselves
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context()), 400
+        department = _user_department(conn, owner_id)
         conn.execute('''
-            INSERT INTO cases (title, owner_id, customer, priority, due_date, progress, status_id, note, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        ''', (title, owner_id, request.form.get('customer', ''), request.form.get('priority', '中'),
+            INSERT INTO cases (title, owner_id, department, customer, priority, due_date, progress, status_id, note, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        ''', (title, owner_id, department, request.form.get('customer', ''), request.form.get('priority', '中'),
               request.form.get('due_date') or None, int(request.form.get('progress') or 0),
               request.form.get('status_id') or None, request.form.get('note', ''), session['user_id']))
         conn.commit()
@@ -331,11 +355,12 @@ def case_edit(case_id):
             owner_id = request.form.get('owner_id') or case['owner_id']
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context(case)), 400
+        department = _user_department(conn, owner_id)
         conn.execute('''
-            UPDATE cases SET title=?, owner_id=?, customer=?, priority=?, due_date=?,
+            UPDATE cases SET title=?, owner_id=?, department=?, customer=?, priority=?, due_date=?,
                 progress=?, status_id=?, note=?, updated_at=datetime('now')
             WHERE id=?
-        ''', (title, owner_id, request.form.get('customer', ''), request.form.get('priority', '中'),
+        ''', (title, owner_id, department, request.form.get('customer', ''), request.form.get('priority', '中'),
               request.form.get('due_date') or None, int(request.form.get('progress') or 0),
               request.form.get('status_id') or None, request.form.get('note', ''), case_id))
         conn.commit()
@@ -369,19 +394,22 @@ def admin_users():
         username = request.form.get('username', '').strip()
         display_name = request.form.get('display_name', '').strip()
         password = request.form.get('password', '')
+        department = request.form.get('department', '')
         is_admin = 1 if request.form.get('is_admin') else 0
         if not username or not display_name or len(password) < 4:
             error = '請填寫帳號、姓名，密碼至少 4 個字元'
+        elif department not in DEPARTMENTS and department != '':
+            error = '部門不正確'
         else:
             try:
                 conn.execute(
-                    'INSERT INTO users (username, password_hash, display_name, is_admin) VALUES (?,?,?,?)',
-                    (username, generate_password_hash(password), display_name, is_admin))
+                    'INSERT INTO users (username, password_hash, display_name, department, is_admin) VALUES (?,?,?,?,?)',
+                    (username, generate_password_hash(password), display_name, department, is_admin))
                 conn.commit()
             except sqlite3.IntegrityError:
                 error = '這個帳號已經存在'
     users = conn.execute('SELECT * FROM users ORDER BY active DESC, display_name').fetchall()
-    return render_template('admin_users.html', users=users, error=error)
+    return render_template('admin_users.html', users=users, error=error, departments=DEPARTMENTS)
 
 
 @app.route('/admin/users/<int:user_id>/toggle_active', methods=['POST'])
@@ -390,6 +418,18 @@ def admin_toggle_user(user_id):
     conn = get_db()
     conn.execute('UPDATE users SET active = 1 - active WHERE id=?', (user_id,))
     conn.commit()
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users/<int:user_id>/department', methods=['POST'])
+@admin_required
+def admin_set_department(user_id):
+    conn = get_db()
+    department = request.form.get('department', '')
+    if department in DEPARTMENTS or department == '':
+        conn.execute('UPDATE users SET department=? WHERE id=?', (department, user_id))
+        conn.execute('UPDATE cases SET department=? WHERE owner_id=?', (department, user_id))
+        conn.commit()
     return redirect(url_for('admin_users'))
 
 
