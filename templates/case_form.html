@@ -37,13 +37,26 @@
     <label>進度 (%)</label>
     <input type="number" name="progress" min="0" max="100" value="{{ case.progress if case else 0 }}">
 
-    <label>狀態</label>
+    <label>狀態（站別）</label>
     <select name="status_id">
       <option value="">（未設定）</option>
       {% for s in statuses %}
-      <option value="{{ s.id }}" {{ 'selected' if case and case.status_id == s.id }}>{{ s.name }}</option>
+      <option value="{{ s.id }}" title="{{ s.description }}" {{ 'selected' if case and case.status_id == s.id }}>{{ s.name }}</option>
       {% endfor %}
     </select>
+    <details class="stage-ref">
+      <summary>各站別「完成」判定基準</summary>
+      <table>
+        <tbody>
+          {% for s in statuses %}
+          <tr>
+            <td><span class="pill" style="background: {{ s.color }}">{{ s.name }}</span></td>
+            <td>{{ s.description }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
 
     <label>最新備註</label>
     <textarea name="note" rows="4">{{ case.note if case else '' }}</textarea>

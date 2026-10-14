@@ -8,6 +8,7 @@
   <form method="post" class="inline-form">
     <input type="text" name="name" placeholder="狀態名稱" required>
     <input type="color" name="color" value="#6b7280">
+    <input type="text" name="description" placeholder="完成判定基準（選填）" style="flex:1; min-width:220px">
     <button type="submit">新增</button>
   </form>
 </div>
@@ -15,18 +16,20 @@
 <div class="card">
   <h2>目前的狀態（依排序）</h2>
   <table>
-    <thead><tr><th>狀態</th><th>顏色</th><th>使用中案子數</th><th></th></tr></thead>
+    <thead><tr><th>狀態</th><th>完成判定基準</th><th>編輯</th><th>使用中案子數</th><th></th></tr></thead>
     <tbody>
       {% for s in statuses %}
       <tr>
+        <td><span class="pill" style="background: {{ s.color }}">{{ s.name }}</span></td>
+        <td class="note-cell">{{ s.description or '' }}</td>
         <td>
           <form method="post" action="{{ url_for('admin_status_edit', status_id=s.id) }}" class="inline-form">
-            <input type="text" name="name" value="{{ s.name }}" style="width:120px">
+            <input type="text" name="name" value="{{ s.name }}" style="width:140px">
             <input type="color" name="color" value="{{ s.color }}">
+            <input type="text" name="description" value="{{ s.description or '' }}" placeholder="完成判定基準" style="flex:1; min-width:200px">
             <button type="submit">更新</button>
           </form>
         </td>
-        <td><span class="pill" style="background: {{ s.color }}">{{ s.name }}</span></td>
         <td>{{ s.case_count }}</td>
         <td>
           <form method="post" action="{{ url_for('admin_status_delete', status_id=s.id) }}" onsubmit="return confirm('確定要刪除這個狀態嗎？（若有案子使用中將無法刪除）');">

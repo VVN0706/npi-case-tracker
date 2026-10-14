@@ -12,7 +12,16 @@ DB_PATH = os.path.join(BASE_DIR, 'case_tracker.db')
 
 app = Flask(__name__)
 
-DEFAULT_STATUSES = ['未開始', '進行中', '卡關中', '待驗證', '已完成']
+DEFAULT_STATUSES = [
+    ('開案 Kick-off', '#6b7280', '收到客戶 SWR 或開案通知，案件正式成立'),
+    ('圖面 & Layout 確認', '#0ea5e9', 'BD 圖 / SBT Layout / LF 圖面經客戶書面確認'),
+    ('材料到位', '#3b82f6', '基板、導線架、線材、compound 等關鍵料全數入庫'),
+    ('1st ES 投料', '#8b5cf6', '工程批工單下線並實際投料'),
+    ('ES 出貨', '#d946ef', '工程樣品出貨予客戶'),
+    ('PKG Qual & RA', '#f59e0b', '廠內封裝可靠度測試完成並判定（MSL/TCT/HTSL/THT）'),
+    ('客戶驗證 / Qual Report', '#f97316', '客戶回覆 PASS，Qual report 正式結案'),
+    ('PNR / 量產轉移', '#16a34a', '量產工單投料，案件轉入量產管理'),
+]
 PRIORITIES = ['高', '中', '低']
 
 
@@ -64,6 +73,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT UNIQUE NOT NULL,
                 color TEXT NOT NULL DEFAULT '#6b7280',
+                description TEXT NOT NULL DEFAULT '',
                 sort_order INTEGER NOT NULL DEFAULT 0
             );
 
@@ -84,8 +94,9 @@ def init_db():
         ''')
 
         if conn.execute('SELECT COUNT(*) FROM statuses').fetchone()[0] == 0:
-            for i, name in enumerate(DEFAULT_STATUSES):
-                conn.execute('INSERT INTO statuses (name, sort_order) VALUES (?, ?)', (name, i))
+            for i, (name, color, description) in enumerate(DEFAULT_STATUSES):
+                conn.execute('INSERT INTO statuses (name, color, description, sort_order) VALUES (?,?,?,?)',
+                             (name, color, description, i))
 
         if conn.execute('SELECT COUNT(*) FROM users').fetchone()[0] == 0:
             conn.execute(
@@ -199,7 +210,7 @@ def dashboard():
 
     total_cases = conn.execute('SELECT COUNT(*) FROM cases').fetchone()[0]
 
-    done_status = conn.execute("SELECT id FROM statuses WHERE name='已完成'").fetchone()
+    done_status = conn.execute("SELECT id FROM statuses WHERE name='PNR / 量產轉移'").fetchone()
     done_id = done_status['id'] if done_status else -1
 
     overdue = conn.execute('''
@@ -404,13 +415,14 @@ def admin_statuses():
     if request.method == 'POST':
         name = request.form.get('name', '').strip()
         color = request.form.get('color') or '#6b7280'
+        description = request.form.get('description', '').strip()
         if not name:
             error = '狀態名稱為必填'
         else:
             max_order = conn.execute('SELECT MAX(sort_order) AS m FROM statuses').fetchone()['m'] or 0
             try:
-                conn.execute('INSERT INTO statuses (name, color, sort_order) VALUES (?,?,?)',
-                             (name, color, max_order + 1))
+                conn.execute('INSERT INTO statuses (name, color, description, sort_order) VALUES (?,?,?,?)',
+                             (name, color, description, max_order + 1))
                 conn.commit()
             except sqlite3.IntegrityError:
                 error = '這個狀態已經存在'
@@ -429,8 +441,10 @@ def admin_status_edit(status_id):
     conn = get_db()
     name = request.form.get('name', '').strip()
     color = request.form.get('color') or '#6b7280'
+    description = request.form.get('description', '').strip()
     if name:
-        conn.execute('UPDATE statuses SET name=?, color=? WHERE id=?', (name, color, status_id))
+        conn.execute('UPDATE statuses SET name=?, color=?, description=? WHERE id=?',
+                     (name, color, description, status_id))
         conn.commit()
     return redirect(url_for('admin_statuses'))
 
