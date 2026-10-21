@@ -103,6 +103,22 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .stage-ref table { margin-top: 8px; font-size: 13px; }
 .stage-ref td { color: var(--text-muted); }
 
+.filters label { margin: 0; white-space: nowrap; }
+.weekly-filters { flex-wrap: wrap; }
+
+.week-section summary { cursor: pointer; padding: 2px 0; }
+.week-body { display: flex; gap: 32px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.donut-wrap { display: flex; align-items: center; gap: 20px; }
+.donut { width: 160px; height: 160px; }
+.donut-total { font-size: 8px; font-weight: 700; fill: var(--text); }
+.donut-unit { font-size: 3px; fill: var(--text-muted); }
+.legend { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.legend li { margin: 4px 0; }
+.legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+.breakdown { flex: 1; min-width: 260px; }
+.breakdown-card { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: 14px; }
+.breakdown-detail { color: var(--text-muted); margin-left: 8px; }
+
 .stage-status-table { margin-top: 6px; }
 .stage-status-table select { width: auto; font-weight: 600; border: none; padding: 6px 10px; }
 

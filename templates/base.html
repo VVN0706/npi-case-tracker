@@ -14,6 +14,7 @@
     <nav>
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">總覽</a>
       <a href="{{ url_for('case_list') }}" class="{{ 'active' if request.endpoint in ['case_list','case_new','case_edit'] }}">案件列表</a>
+      <a href="{{ url_for('weekly') }}" class="{{ 'active' if request.endpoint == 'weekly' }}">週統計</a>
       <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案件</a>
       {% if g.current_user.is_admin %}
       <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint == 'admin_users' }}">使用者管理</a>

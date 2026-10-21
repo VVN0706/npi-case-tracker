@@ -61,7 +61,7 @@
     {% if case %}
     <label>各階段狀態</label>
     <table class="stage-status-table">
-      <thead><tr><th>階段</th><th>狀態</th></tr></thead>
+      <thead><tr><th>階段</th><th>狀態</th><th>實際發生日</th></tr></thead>
       <tbody>
         {% for s in stages %}
         <tr>
@@ -73,10 +73,12 @@
               {% endfor %}
             </select>
           </td>
+          <td><input type="date" name="stage_date_{{ s.id }}" value="{{ today }}" max="{{ today }}" style="width:auto"></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    <p class="hint">只有狀態有變更的階段才會記錄，並以「實際發生日」計入週統計（預設今天，可改成實際完成的日期）。</p>
     {% endif %}
 
     <div class="form-actions">

@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}週統計 - NPI 案件追蹤{% endblock %}
+{% block content %}
+
+<div class="card">
+  <form method="get" class="filters weekly-filters">
+    <label>週別</label>
+    <select name="week" onchange="this.form.submit()">
+      {% for w in weeks %}
+      <option value="{{ w.value }}" {{ 'selected' if w.value == week_value }}>{{ w.label }}</option>
+      {% endfor %}
+    </select>
+    <label>部門</label>
+    <select name="department" onchange="this.form.submit()">
+      <option value="">全部部門</option>
+      {% for d in departments %}
+      <option value="{{ d }}" {{ 'selected' if department_filter == d }}>{{ d }}</option>
+      {% endfor %}
+    </select>
+    <label>客戶</label>
+    <select name="customer" onchange="this.form.submit()">
+      <option value="">全部客戶</option>
+      {% for c in customers %}
+      <option value="{{ c }}" {{ 'selected' if customer_filter == c }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <label>人員</label>
+    <select name="owner" onchange="this.form.submit()">
+      <option value="">全部人員</option>
+      {% for u in users %}
+      <option value="{{ u.id }}" {{ 'selected' if owner_filter|string == u.id|string }}>{{ u.display_name }}</option>
+      {% endfor %}
+    </select>
+  </form>
+  <p class="hint">
+    件數是看所選那一週「實際發生」的狀態變化（依案件編輯時填的實際發生日），不是看案件建立日。
+    同一週內同一案件的同一階段若變更多次，只算最後一次。週別為週一～週日。
+    Wait＝未開始；Ongoing＝進行中／延遲／卡關；Done＝完成；NA 不計。
+  </p>
+</div>
+
+{% for sec in sections %}
+<details class="card week-section" open>
+  <summary><span class="pill" style="background: {{ sec.stage.color }}">{{ sec.stage.name }}</span></summary>
+  {% if sec.total %}
+  <div class="week-body">
+    <div class="donut-wrap">
+      <svg viewBox="0 0 42 42" class="donut">
+        <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e5e7eb" stroke-width="6"></circle>
+        {% for seg in sec.segments if seg.count %}
+        <circle cx="21" cy="21" r="15.915" fill="none" stroke="{{ seg.color }}" stroke-width="6"
+                stroke-dasharray="{{ seg.pct }} {{ seg.gap }}" stroke-dashoffset="{{ seg.offset }}">
+          <title>{{ seg.bucket }}：{{ seg.count }} 件</title>
+        </circle>
+        {% endfor %}
+        <text x="21" y="21.5" text-anchor="middle" class="donut-total">{{ sec.total }}</text>
+        <text x="21" y="26" text-anchor="middle" class="donut-unit">件</text>
+      </svg>
+      <ul class="legend">
+        {% for seg in sec.segments %}
+        <li><span class="dot" style="background: {{ seg.color }}"></span>{{ seg.bucket }}：<b>{{ seg.count }}</b>（{{ seg.pct|round|int }}%）</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="breakdown">
+      {% for seg in sec.segments if seg.count %}
+      <div class="breakdown-card" style="border-left-color: {{ seg.color }}">
+        <b>{{ seg.bucket }} {{ seg.count }}件</b>
+        <span class="breakdown-detail">
+          {% for name, n in sec.breakdown[seg.bucket] %}{{ name }}*{{ n }}{% if not loop.last %}　{% endif %}{% endfor %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="empty">這一週這個階段沒有狀態變化</p>
+  {% endif %}
+</details>
+{% endfor %}
+
+{% endblock %}

@@ -2,7 +2,7 @@ import functools
 import os
 import secrets
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 from flask import Flask, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -33,6 +33,9 @@ STAGE_STATUS_COLORS = {
     '完成': '#16a34a',
     'NA': '#d1d5db',
 }
+STATUS_BUCKET = {'未開始': 'Wait', '進行中': 'Ongoing', '延遲': 'Ongoing', '卡關': 'Ongoing', '完成': 'Done'}
+BUCKETS = ['Wait', 'Ongoing', 'Done']
+BUCKET_COLORS = {'Wait': '#9ca3af', 'Ongoing': '#3b82f6', 'Done': '#16a34a'}
 
 
 def get_db():
@@ -66,6 +69,28 @@ def _sync_case_stage_rows(conn):
         INSERT OR IGNORE INTO case_stage_status (case_id, stage_id, status)
         SELECT c.id, s.id, '未開始' FROM cases c CROSS JOIN stages s
     ''')
+
+
+def _log_stage_status(conn, case_id, stage_id, old_status, new_status, occurred_on, user_id):
+    # A backdated change must not sit before events recorded earlier, or the weekly stats
+    # would show the older (e.g. initial 未開始) event as the latest state.
+    conn.execute('''
+        UPDATE case_stage_status_log SET occurred_on=?
+        WHERE case_id=? AND stage_id=? AND occurred_on>?
+    ''', (occurred_on, case_id, stage_id, occurred_on))
+    conn.execute('''
+        INSERT INTO case_stage_status_log (case_id, stage_id, old_status, new_status, occurred_on, changed_by)
+        VALUES (?,?,?,?,?,?)
+    ''', (case_id, stage_id, old_status, new_status, occurred_on, user_id))
+
+
+def _parse_occurred_on(value, today):
+    """Validate a user-supplied actual-occurrence date; fall back to today, never in the future."""
+    try:
+        d = date.fromisoformat(value or '')
+    except ValueError:
+        return today
+    return min(d, date.fromisoformat(today)).isoformat()
 
 
 def init_db():
@@ -123,6 +148,19 @@ def init_db():
                 status TEXT NOT NULL DEFAULT '未開始',
                 PRIMARY KEY (case_id, stage_id)
             );
+
+            CREATE TABLE IF NOT EXISTS case_stage_status_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+                old_status TEXT,
+                new_status TEXT NOT NULL,
+                occurred_on TEXT NOT NULL,
+                changed_by INTEGER REFERENCES users(id),
+                changed_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_status_log_occurred ON case_stage_status_log(occurred_on);
         ''')
 
         user_cols = {r['name'] for r in conn.execute('PRAGMA table_info(users)')}
@@ -421,7 +459,7 @@ def _case_form_context(case=None):
         stage_status_map = {r['stage_id']: r['status'] for r in rows}
     return dict(case=case, users=users, stages=stages, priorities=PRIORITIES,
                 stage_statuses=STAGE_STATUSES, stage_status_map=stage_status_map,
-                stage_status_colors=STAGE_STATUS_COLORS)
+                stage_status_colors=STAGE_STATUS_COLORS, today=date.today().isoformat())
 
 
 def _user_department(conn, user_id):
@@ -448,6 +486,9 @@ def case_new():
               request.form.get('due_date') or None, int(request.form.get('progress') or 0),
               request.form.get('note', ''), session['user_id']))
         _sync_case_stage_rows(conn)
+        today = date.today().isoformat()
+        for s in conn.execute('SELECT id FROM stages').fetchall():
+            _log_stage_status(conn, cur.lastrowid, s['id'], None, '未開始', today, session['user_id'])
         conn.commit()
         return redirect(url_for('case_edit', case_id=cur.lastrowid))
     return render_template('case_form.html', **_case_form_context())
@@ -479,11 +520,18 @@ def case_edit(case_id):
               request.form.get('due_date') or None, int(request.form.get('progress') or 0),
               request.form.get('note', ''), case_id))
 
+        today = date.today().isoformat()
+        current = {r['stage_id']: r['status'] for r in conn.execute(
+            'SELECT stage_id, status FROM case_stage_status WHERE case_id=?', (case_id,))}
         for s in conn.execute('SELECT id FROM stages').fetchall():
             value = request.form.get(f'stage_status_{s["id"]}')
-            if value in STAGE_STATUSES:
-                conn.execute('UPDATE case_stage_status SET status=? WHERE case_id=? AND stage_id=?',
-                             (value, case_id, s['id']))
+            old = current.get(s['id'])
+            if value not in STAGE_STATUSES or value == old:
+                continue
+            conn.execute('UPDATE case_stage_status SET status=? WHERE case_id=? AND stage_id=?',
+                         (value, case_id, s['id']))
+            occurred_on = _parse_occurred_on(request.form.get(f'stage_date_{s["id"]}'), today)
+            _log_stage_status(conn, case_id, s['id'], old, value, occurred_on, session['user_id'])
         conn.commit()
         return redirect(url_for('case_list'))
 
@@ -502,6 +550,104 @@ def case_delete(case_id):
     conn.execute('DELETE FROM cases WHERE id=?', (case_id,))
     conn.commit()
     return redirect(url_for('case_list'))
+
+
+# ── Weekly stats ─────────────────────────────────────────────────────────
+
+def _iso_week_value(d):
+    iso = d.isocalendar()
+    return f'{iso.year}-W{iso.week:02d}'
+
+
+@app.route('/weekly')
+@login_required
+def weekly():
+    conn = get_db()
+    today = date.today()
+    cur_monday = today - timedelta(days=today.weekday())
+
+    try:
+        year, wk = request.args.get('week', '').split('-W')
+        monday = date.fromisocalendar(int(year), int(wk), 1)
+    except ValueError:
+        monday = cur_monday
+    sunday = monday + timedelta(days=6)
+    week_value = _iso_week_value(monday)
+
+    department_filter = request.args.get('department', '')
+    customer_filter = request.args.get('customer', '')
+    owner_filter = request.args.get('owner', '')
+
+    query = '''
+        SELECT l.case_id, l.stage_id, l.new_status, c.customer
+        FROM case_stage_status_log l JOIN cases c ON c.id = l.case_id
+        WHERE l.occurred_on BETWEEN ? AND ?
+    '''
+    params = [monday.isoformat(), sunday.isoformat()]
+    if department_filter:
+        query += ' AND c.department = ?'
+        params.append(department_filter)
+    if customer_filter:
+        query += ' AND c.customer = ?'
+        params.append(customer_filter)
+    if owner_filter:
+        query += ' AND c.owner_id = ?'
+        params.append(owner_filter)
+    query += ' ORDER BY l.occurred_on, l.id'
+
+    # Only the last change per case+stage within the week counts.
+    latest = {}
+    for r in conn.execute(query, params):
+        latest[(r['case_id'], r['stage_id'])] = r
+
+    sections = []
+    for s in conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall():
+        counts = {b: 0 for b in BUCKETS}
+        by_customer = {b: {} for b in BUCKETS}
+        for (_, stage_id), r in latest.items():
+            bucket = STATUS_BUCKET.get(r['new_status'])
+            if stage_id != s['id'] or bucket is None:
+                continue
+            counts[bucket] += 1
+            name = r['customer'] or '（未填客戶）'
+            by_customer[bucket][name] = by_customer[bucket].get(name, 0) + 1
+        total = sum(counts.values())
+        segments = []
+        offset = 25
+        for b in BUCKETS:
+            pct = counts[b] * 100 / total if total else 0
+            segments.append({'bucket': b, 'count': counts[b], 'pct': pct, 'gap': 100 - pct,
+                             'offset': offset, 'color': BUCKET_COLORS[b]})
+            offset -= pct
+        sections.append({
+            'stage': s, 'total': total, 'segments': segments,
+            'breakdown': {b: sorted(by_customer[b].items(), key=lambda kv: (-kv[1], kv[0])) for b in BUCKETS},
+        })
+
+    earliest = conn.execute('SELECT MIN(occurred_on) FROM case_stage_status_log').fetchone()[0]
+    earliest_monday = cur_monday
+    if earliest:
+        e = date.fromisoformat(earliest)
+        earliest_monday = e - timedelta(days=e.weekday())
+    weeks = []
+    m = cur_monday
+    while m >= earliest_monday and len(weeks) < 52:
+        end = m + timedelta(days=6)
+        weeks.append({'value': _iso_week_value(m),
+                      'label': f'{_iso_week_value(m).replace("-W", "-WK")}（{m.month}/{m.day}～{end.month}/{end.day}）'})
+        m -= timedelta(days=7)
+    if week_value not in {w['value'] for w in weeks}:
+        weeks.append({'value': week_value,
+                      'label': f'{week_value.replace("-W", "-WK")}（{monday.month}/{monday.day}～{sunday.month}/{sunday.day}）'})
+
+    customers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT customer FROM cases WHERE customer IS NOT NULL AND customer != '' ORDER BY customer")]
+    users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
+
+    return render_template('weekly.html', sections=sections, buckets=BUCKETS, bucket_colors=BUCKET_COLORS,
+                            weeks=weeks, week_value=week_value, customers=customers, users=users,
+                            departments=DEPARTMENTS, department_filter=department_filter,
+                            customer_filter=customer_filter, owner_filter=owner_filter)
 
 
 # ── Admin: users ─────────────────────────────────────────────────────────
