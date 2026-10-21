@@ -131,24 +131,6 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
   font-weight: 600;
 }
 
-.priority { font-weight: 600; }
-.priority-高 { color: var(--danger); }
-.priority-中 { color: #d97706; }
-.priority-低 { color: var(--text-muted); }
-
-.progress-bar {
-  display: inline-block;
-  width: 90px;
-  height: 8px;
-  background: #e5e7eb;
-  border-radius: 4px;
-  overflow: hidden;
-  vertical-align: middle;
-  margin-right: 6px;
-}
-.progress-fill { height: 100%; background: var(--primary); }
-.progress-text { font-size: 12px; color: var(--text-muted); }
-
 form label { display: block; font-size: 13px; color: var(--text-muted); margin: 12px 0 4px; }
 form input[type=text], form input[type=password], form input[type=date],
 form input[type=number], form select, form textarea {

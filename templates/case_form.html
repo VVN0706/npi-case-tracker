@@ -28,18 +28,8 @@
     <label>客戶</label>
     <input type="text" name="customer" value="{{ case.customer if case else '' }}">
 
-    <label>優先度</label>
-    <select name="priority">
-      {% for p in priorities %}
-      <option value="{{ p }}" {{ 'selected' if (case and case.priority == p) or (not case and p == '中') }}>{{ p }}</option>
-      {% endfor %}
-    </select>
-
     <label>預計完成日</label>
     <input type="date" name="due_date" value="{{ case.due_date if case else '' }}">
-
-    <label>進度 (%)</label>
-    <input type="number" name="progress" min="0" max="100" value="{{ case.progress if case else 0 }}">
 
     <details class="stage-ref">
       <summary>各階段「完成」判定基準</summary>

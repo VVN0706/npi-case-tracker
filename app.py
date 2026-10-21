@@ -23,7 +23,6 @@ DEFAULT_STAGES = [
     ('客戶驗證 / Qual Report', '#f97316', '客戶回覆 PASS，Qual report 正式結案'),
     ('PNR / 量產轉移', '#16a34a', '量產工單投料，案件轉入量產管理'),
 ]
-PRIORITIES = ['高', '中', '低']
 DEPARTMENTS = ['2620', '2640', '2650']
 STAGE_STATUSES = ['未開始', '進行中', '延遲', '卡關', '完成', 'NA']
 STAGE_STATUS_COLORS = {
@@ -184,6 +183,17 @@ def init_db():
 
         conn.execute('PRAGMA foreign_keys = ON')
         _sync_case_stage_rows(conn)
+
+        # One-time upgrade: seed history for cases that predate the status log, so the
+        # weekly stats aren't empty. Dates are estimates (created/last-updated day).
+        if conn.execute('SELECT COUNT(*) FROM case_stage_status_log').fetchone()[0] == 0:
+            conn.execute('''
+                INSERT INTO case_stage_status_log (case_id, stage_id, old_status, new_status, occurred_on)
+                SELECT css.case_id, css.stage_id, NULL, css.status,
+                       CASE WHEN css.status = '未開始' THEN date(c.created_at, 'localtime')
+                            ELSE date(c.updated_at, 'localtime') END
+                FROM case_stage_status css JOIN cases c ON c.id = css.case_id
+            ''')
 
         app.secret_key = _get_or_create_secret_key(conn)
         conn.commit()
@@ -370,20 +380,15 @@ def dashboard():
     engineer_stats = {}
     for u in conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall():
         engineer_stats[u['id']] = {'id': u['id'], 'display_name': u['display_name'],
-                                    'total': 0, 'done_cnt': 0, 'progress_sum': 0}
+                                    'total': 0, 'done_cnt': 0}
     for c in all_cases:
         st = engineer_stats.get(c['owner_id'])
         if st is None:
             continue
         st['total'] += 1
-        st['progress_sum'] += c['progress']
         if progress_by_case[c['id']]['all_done']:
             st['done_cnt'] += 1
-    by_engineer = []
-    for st in engineer_stats.values():
-        avg = round(st['progress_sum'] / st['total']) if st['total'] else 0
-        by_engineer.append({**st, 'avg_progress': avg})
-    by_engineer.sort(key=lambda x: (-x['total'], x['display_name']))
+    by_engineer = sorted(engineer_stats.values(), key=lambda x: (-x['total'], x['display_name']))
 
     recent_raw = conn.execute('''
         SELECT c.*, u.display_name AS owner_name
@@ -458,7 +463,7 @@ def _case_form_context(case=None):
         rows = conn.execute('SELECT stage_id, status FROM case_stage_status WHERE case_id=?',
                              (case['id'],)).fetchall()
         stage_status_map = {r['stage_id']: r['status'] for r in rows}
-    return dict(case=case, users=users, stages=stages, priorities=PRIORITIES,
+    return dict(case=case, users=users, stages=stages,
                 stage_statuses=STAGE_STATUSES, stage_status_map=stage_status_map,
                 stage_status_colors=STAGE_STATUS_COLORS, today=date.today().isoformat())
 
@@ -481,11 +486,10 @@ def case_new():
             return render_template('case_form.html', error='案名為必填', **_case_form_context()), 400
         department = _user_department(conn, owner_id)
         cur = conn.execute('''
-            INSERT INTO cases (title, owner_id, department, customer, priority, due_date, progress, note, created_by)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        ''', (title, owner_id, department, request.form.get('customer', ''), request.form.get('priority', '中'),
-              request.form.get('due_date') or None, int(request.form.get('progress') or 0),
-              request.form.get('note', ''), session['user_id']))
+            INSERT INTO cases (title, owner_id, department, customer, due_date, note, created_by)
+            VALUES (?,?,?,?,?,?,?)
+        ''', (title, owner_id, department, request.form.get('customer', ''),
+              request.form.get('due_date') or None, request.form.get('note', ''), session['user_id']))
         _sync_case_stage_rows(conn)
         today = date.today().isoformat()
         for s in conn.execute('SELECT id FROM stages').fetchall():
@@ -514,12 +518,11 @@ def case_edit(case_id):
             return render_template('case_form.html', error='案名為必填', **_case_form_context(case)), 400
         department = _user_department(conn, owner_id)
         conn.execute('''
-            UPDATE cases SET title=?, owner_id=?, department=?, customer=?, priority=?, due_date=?,
-                progress=?, note=?, updated_at=datetime('now')
+            UPDATE cases SET title=?, owner_id=?, department=?, customer=?, due_date=?, note=?,
+                updated_at=datetime('now')
             WHERE id=?
-        ''', (title, owner_id, department, request.form.get('customer', ''), request.form.get('priority', '中'),
-              request.form.get('due_date') or None, int(request.form.get('progress') or 0),
-              request.form.get('note', ''), case_id))
+        ''', (title, owner_id, department, request.form.get('customer', ''),
+              request.form.get('due_date') or None, request.form.get('note', ''), case_id))
 
         today = date.today().isoformat()
         current = {r['stage_id']: r['status'] for r in conn.execute(

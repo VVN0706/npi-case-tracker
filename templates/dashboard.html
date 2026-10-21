@@ -32,17 +32,13 @@
     <h2>各工程師負載</h2>
     {% if by_engineer %}
     <table>
-      <thead><tr><th>工程師</th><th>案件數</th><th>已完成</th><th>平均進度</th></tr></thead>
+      <thead><tr><th>工程師</th><th>案件數</th><th>已完成</th></tr></thead>
       <tbody>
         {% for e in by_engineer %}
         <tr>
           <td>{{ e.display_name }}</td>
           <td>{{ e.total }}</td>
           <td>{{ e.done_cnt or 0 }}</td>
-          <td>
-            <div class="progress-bar"><div class="progress-fill" style="width: {{ e.avg_progress or 0 }}%"></div></div>
-            <span class="progress-text">{{ (e.avg_progress or 0)|int }}%</span>
-          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -104,7 +100,7 @@
   <h2>最近更新</h2>
   {% if recent %}
   <table>
-    <thead><tr><th>案名</th><th>負責人</th><th>目前階段</th><th>進度</th><th>最新備註</th><th>更新時間</th></tr></thead>
+    <thead><tr><th>案名</th><th>負責人</th><th>目前階段</th><th>最新備註</th><th>更新時間</th></tr></thead>
     <tbody>
       {% for c in recent %}
       <tr>
@@ -118,7 +114,6 @@
           <span class="pill" style="background: {{ c.current_status_color }}">{{ c.current_status }}</span>
           {% endif %}
         </td>
-        <td>{{ c.progress }}%</td>
         <td class="note-cell">{{ c.note or '' }}</td>
         <td>{{ c.updated_at }}</td>
       </tr>
