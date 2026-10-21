@@ -8,7 +8,8 @@ from flask import Flask, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'case_tracker.db')
+DATA_DIR = os.environ.get('NPI_CASE_DATA_DIR', BASE_DIR)
+DB_PATH = os.path.join(DATA_DIR, 'case_tracker.db')
 
 app = Flask(__name__)
 
