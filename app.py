@@ -37,20 +37,28 @@ STATUS_BUCKET = {'未開始': 'Wait', '進行中': 'Ongoing', '延遲': 'Ongoing
 BUCKETS = ['Wait', 'Ongoing', 'Done']
 BUCKET_COLORS = {'Wait': '#9ca3af', 'Ongoing': '#3b82f6', 'Done': '#16a34a'}
 BASIC_FIELDS = [
+    ('customer_code', '客戶代碼'),
+    ('device', 'Device'),
+    ('pkg', 'PKG'),
+    ('pkg_size', 'PKG size (mm)'),
+    ('sbt_lf_drawing_no', 'SBT / LF 圖號'),
+    ('sbt_lf_part_no', 'SBT / LF 料號'),
     ('product_attr', '產品屬性'),
     ('product_app', '產品應用'),
-    ('product_tech', 'Product / Tech'),
+    ('product_tech', 'Product / Technology'),
     ('type_application', 'Type Application'),
-    ('sbt_lf_drawing_no', 'SBT/LF 圖號'),
-    ('sbt_lf_part_no', 'SBT/LF 料號'),
     ('turnkey', 'Turnkey'),
     ('npdm', 'NPDM'),
     ('pd_owner', 'PD Owner'),
     ('design_owner', 'Design Owner'),
-    ('forecast', 'Forecast'),
     ('tra_level', 'TRA Level'),
+    ('product_category', '產品類別（呈報分類）'),
+    ('forecast', 'Forecast'),
 ]
 BASIC_COLS = [c for c, _ in BASIC_FIELDS]
+BASIC_LABELS = dict(BASIC_FIELDS)
+FORECAST_OPTIONS = ['無', '有']
+PRODUCT_CATEGORIES = ['其他']  # full 呈報分類 list not provided yet
 
 
 def get_db():
@@ -542,12 +550,19 @@ def _case_form_context(case=None):
     stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
     stage_summary = []
     updated_local = ''
+    current_phase = '建立後依各階段狀態自動判定'
     if case:
         stage_summary = _case_stage_rows(conn, [case['id']]).get(case['id'], [])
         updated_local = conn.execute("SELECT datetime(updated_at, 'localtime') FROM cases WHERE id=?",
                                       (case['id'],)).fetchone()[0]
-    return dict(case=case, users=users, stages=stages, basic_fields=BASIC_FIELDS, updated_local=updated_local,
-                stage_summary=stage_summary, stage_status_colors=STAGE_STATUS_COLORS)
+        progress = _case_progress(stage_summary)
+        current_phase = '已全部完成' if progress['all_done'] else (progress['current_stage_name'] or '—')
+    product_tech = case['product_tech'] if case else ''
+    return dict(case=case, users=users, stages=stages, labels=BASIC_LABELS, updated_local=updated_local,
+                stage_summary=stage_summary, stage_status_colors=STAGE_STATUS_COLORS,
+                current_phase=current_phase, forecast_options=FORECAST_OPTIONS,
+                product_categories=PRODUCT_CATEGORIES,
+                auto_category=product_tech if product_tech in PRODUCT_CATEGORIES else '其他')
 
 
 def _user_department(conn, user_id):

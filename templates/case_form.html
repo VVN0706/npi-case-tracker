@@ -11,7 +11,7 @@
 
     <label>負責工程師</label>
     {% if g.current_user.is_admin %}
-    <select name="owner_id" id="owner_id" onchange="document.getElementById('dept_display').textContent = this.options[this.selectedIndex].dataset.department || '（無部門）'">
+    <select name="owner_id" id="owner_id" onchange="document.getElementById('dept_display').value = this.options[this.selectedIndex].dataset.department || '（無部門）'">
       {% for u in users %}
       <option value="{{ u.id }}" data-department="{{ u.department or '（無部門）' }}" {{ 'selected' if case and case.owner_id == u.id else ('selected' if not case and u.id == g.current_user.id) }}>{{ u.display_name }}</option>
       {% endfor %}
@@ -21,19 +21,38 @@
     <p class="hint">只有管理員可以指派給其他工程師</p>
     {% endif %}
 
-    <label>部門</label>
-    <input type="text" id="dept_display" value="{{ (case.department if case else g.current_user.department) or '（無部門）' }}" disabled>
-    <p class="hint">依負責工程師自動帶入，無法手動修改</p>
-
-    <label>客戶</label>
-    <input type="text" name="customer" value="{{ case.customer if case else '' }}">
-
     <h3 class="form-section">基本資料</h3>
     <div class="basic-grid">
-      {% for col, label in basic_fields %}
+      {% for key in ['dept', 'customer_code', 'customer', 'device', 'pkg', 'pkg_size', 'sbt_lf_drawing_no', 'sbt_lf_part_no', 'product_attr', 'product_app', 'product_tech', 'type_application', 'turnkey', 'npdm', 'pd_owner', 'design_owner', 'tra_level', 'phase', 'product_category', 'forecast'] %}
       <div>
-        <label>{{ label }}</label>
-        <input type="text" name="{{ col }}" value="{{ case[col] if case else '' }}">
+        {% if key == 'dept' %}
+        <label>部門</label>
+        <input type="text" id="dept_display" value="{{ (case.department if case else g.current_user.department) or '（無部門）' }}" disabled>
+        {% elif key == 'customer' %}
+        <label>客戶名稱</label>
+        <input type="text" name="customer" value="{{ case.customer if case else '' }}">
+        {% elif key == 'phase' %}
+        <label>Current Phase</label>
+        <input type="text" value="{{ current_phase }}" disabled>
+        {% elif key == 'product_category' %}
+        {% set cur = case.product_category if case else '' %}
+        <label>{{ labels[key] }}</label>
+        <select name="product_category">
+          <option value="">自動（依 Product / Technology：{{ auto_category }}）</option>
+          {% for o in product_categories %}<option value="{{ o }}" {{ 'selected' if cur == o }}>{{ o }}</option>{% endfor %}
+          {% if cur and cur not in product_categories %}<option value="{{ cur }}" selected>{{ cur }}</option>{% endif %}
+        </select>
+        {% elif key == 'forecast' %}
+        {% set cur = case.forecast if case else '' %}
+        <label>{{ labels[key] }}</label>
+        <select name="forecast">
+          {% for o in forecast_options %}<option value="{{ o }}" {{ 'selected' if cur == o }}>{{ o }}</option>{% endfor %}
+          {% if cur and cur not in forecast_options %}<option value="{{ cur }}" selected>{{ cur }}</option>{% endif %}
+        </select>
+        {% else %}
+        <label>{{ labels[key] }}</label>
+        <input type="text" name="{{ key }}" value="{{ case[key] if case else '' }}">
+        {% endif %}
       </div>
       {% endfor %}
       {% if case %}
@@ -43,6 +62,7 @@
       </div>
       {% endif %}
     </div>
+    <p class="hint">部門依負責工程師自動帶入；Current Phase 由各階段狀態自動判定，兩者都無法手動修改。</p>
 
     {% if not case %}
     <h3 class="form-section">各階段時程</h3>
