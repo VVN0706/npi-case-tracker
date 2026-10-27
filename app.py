@@ -580,6 +580,7 @@ def case_new():
             [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
              request.form.get('note', ''), session['user_id']] + [request.form.get(c, '').strip() for c in BASIC_COLS])
         _sync_case_stage_rows(conn)
+        _apply_stage_form(conn, cur.lastrowid, request.form, session['user_id'], log=False)
         _record_status_changes(conn, cur.lastrowid, session['user_id'], initial=True)
         conn.commit()
         return redirect(url_for('case_edit', case_id=cur.lastrowid))
@@ -632,6 +633,38 @@ def _fmt_stage_value(col, value):
     return value or '—'
 
 
+def _apply_stage_form(conn, case_id, form, user_id, reason='', reset_baseline=False, log=True):
+    """Save per-stage dates/flags from a submitted form; fields missing from the form count as empty."""
+    for old in _case_stage_rows(conn, [case_id]).get(case_id, []):
+        sid = old['stage_id']
+        plan = _clean_date(form.get(f'plan_date_{sid}'))
+        baseline = _clean_date(form.get(f'baseline_date_{sid}'))
+        manual = form.get(f'manual_{sid}', '')
+        new = {
+            'plan_date': plan,
+            # The first date entered becomes the baseline; later changes leave it alone.
+            'baseline_date': plan if reset_baseline else (baseline or plan),
+            'not_applicable': 1 if form.get(f'na_{sid}') else 0,
+            'achieved': 1 if form.get(f'achieved_{sid}') else 0,
+            'manual_status': manual if manual in STAGE_STATUSES else '',
+        }
+        if log:
+            for col, label in STAGE_FIELDS:
+                if new[col] != old[col]:
+                    conn.execute('''
+                        INSERT INTO case_stage_change_log
+                            (case_id, stage_id, field, old_value, new_value, reason, changed_by)
+                        VALUES (?,?,?,?,?,?,?)
+                    ''', (case_id, sid, label, _fmt_stage_value(col, old[col]), _fmt_stage_value(col, new[col]),
+                          reason, user_id))
+        conn.execute('''
+            UPDATE case_stage_status
+            SET plan_date=?, baseline_date=?, not_applicable=?, achieved=?, manual_status=?
+            WHERE case_id=? AND stage_id=?
+        ''', (new['plan_date'], new['baseline_date'], new['not_applicable'], new['achieved'],
+              new['manual_status'], case_id, sid))
+
+
 @app.route('/cases/<int:case_id>/stages', methods=['GET', 'POST'])
 @login_required
 def case_stages(case_id):
@@ -643,35 +676,9 @@ def case_stages(case_id):
         return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
 
     if request.method == 'POST':
-        reason = request.form.get('reason', '').strip()
-        reset_baseline = request.form.get('action') == 'reset_baseline'
-        for old in _case_stage_rows(conn, [case_id]).get(case_id, []):
-            sid = old['stage_id']
-            plan = _clean_date(request.form.get(f'plan_date_{sid}'))
-            baseline = _clean_date(request.form.get(f'baseline_date_{sid}'))
-            manual = request.form.get(f'manual_{sid}', '')
-            new = {
-                'plan_date': plan,
-                # The first date entered becomes the baseline; later changes leave it alone.
-                'baseline_date': plan if reset_baseline else (baseline or plan),
-                'not_applicable': 1 if request.form.get(f'na_{sid}') else 0,
-                'achieved': 1 if request.form.get(f'achieved_{sid}') else 0,
-                'manual_status': manual if manual in STAGE_STATUSES else '',
-            }
-            for col, label in STAGE_FIELDS:
-                if new[col] != old[col]:
-                    conn.execute('''
-                        INSERT INTO case_stage_change_log
-                            (case_id, stage_id, field, old_value, new_value, reason, changed_by)
-                        VALUES (?,?,?,?,?,?,?)
-                    ''', (case_id, sid, label, _fmt_stage_value(col, old[col]), _fmt_stage_value(col, new[col]),
-                          reason, session['user_id']))
-            conn.execute('''
-                UPDATE case_stage_status
-                SET plan_date=?, baseline_date=?, not_applicable=?, achieved=?, manual_status=?
-                WHERE case_id=? AND stage_id=?
-            ''', (new['plan_date'], new['baseline_date'], new['not_applicable'], new['achieved'],
-                  new['manual_status'], case_id, sid))
+        _apply_stage_form(conn, case_id, request.form, session['user_id'],
+                          reason=request.form.get('reason', '').strip(),
+                          reset_baseline=request.form.get('action') == 'reset_baseline')
         conn.execute("UPDATE cases SET updated_at=datetime('now') WHERE id=?", (case_id,))
         _record_status_changes(conn, case_id, session['user_id'])
         conn.commit()

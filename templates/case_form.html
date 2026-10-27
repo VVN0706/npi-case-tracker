@@ -47,6 +47,32 @@
       {% endif %}
     </div>
 
+    {% if not case %}
+    <h3 class="form-section">各階段時程</h3>
+    <p class="hint">填各階段的計畫日；已經完成的階段勾「已達成」並填實際達成日。第一次填的日期會成為 Baseline，建立後可在「編輯各階段時程與狀態」調整。</p>
+    <table class="stage-edit-table">
+      <thead><tr><th>階段</th><th>計畫 / 實際日</th><th>不適用</th><th></th></tr></thead>
+      <tbody>
+        {% for s in stages %}
+        <tr>
+          <td><span class="pill" style="background: {{ s.color }}" title="{{ s.description }}">{{ s.name }}</span></td>
+          <td><input type="date" name="plan_date_{{ s.id }}"></td>
+          <td><input type="checkbox" name="na_{{ s.id }}"></td>
+          <td><label class="achieve"><input type="checkbox" name="achieved_{{ s.id }}"><span>✓ 已達成</span></label></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <script>
+    document.querySelectorAll('.achieve input').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var d = cb.closest('tr').querySelector('input[type=date]');
+        if (cb.checked && !d.value) d.value = new Date().toLocaleDateString('sv-SE');
+      });
+    });
+    </script>
+    {% endif %}
+
     <details class="stage-ref">
       <summary>各階段「完成」判定基準</summary>
       <table>
