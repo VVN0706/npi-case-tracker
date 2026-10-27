@@ -4,6 +4,8 @@
 
 ## 執行
 
+需要 Python 3.8 以上（Windows 上若 `python` 指到舊版，改用 `py -3.12` 之類指定版本）。
+
 ```
 pip install -r requirements.txt
 python app.py

@@ -810,8 +810,17 @@ def case_delete(case_id):
 # ── Weekly stats ─────────────────────────────────────────────────────────
 
 def _iso_week_value(d):
-    iso = d.isocalendar()
-    return f'{iso.year}-W{iso.week:02d}'
+    year, week, _ = d.isocalendar()  # a plain tuple before Python 3.9, so no attribute access
+    return f'{year}-W{week:02d}'
+
+
+def _iso_week_monday(year, week):
+    """Monday of an ISO week (date.fromisocalendar needs Python 3.8+); raises ValueError if it isn't a real week."""
+    jan4 = date(year, 1, 4)  # ISO week 1 always contains January 4th
+    monday = jan4 - timedelta(days=jan4.weekday()) + timedelta(weeks=week - 1)
+    if _iso_week_value(monday) != f'{year}-W{week:02d}':
+        raise ValueError('invalid ISO week')
+    return monday
 
 
 @app.route('/weekly')
@@ -823,8 +832,8 @@ def weekly():
 
     try:
         year, wk = request.args.get('week', '').split('-W')
-        monday = date.fromisocalendar(int(year), int(wk), 1)
-    except ValueError:
+        monday = _iso_week_monday(int(year), int(wk))
+    except (ValueError, OverflowError):
         monday = cur_monday
     sunday = monday + timedelta(days=6)
     week_value = _iso_week_value(monday)
