@@ -435,18 +435,38 @@ def _case_progress(stage_rows):
 def dashboard():
     conn = get_db()
 
-    stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
-    all_cases = conn.execute('''
+    department_filter = request.args.get('department', '')
+    year_filter = request.args.get('year', '')
+    customer_filter = request.args.get('customer', '')
+
+    query = '''
         SELECT c.*, u.display_name AS owner_name
         FROM cases c JOIN users u ON u.id = c.owner_id
-    ''').fetchall()
+        WHERE 1=1
+    '''
+    params = []
+    if department_filter:
+        query += ' AND c.department = ?'
+        params.append(department_filter)
+    if year_filter:
+        query += " AND strftime('%Y', c.created_at, 'localtime') = ?"
+        params.append(year_filter)
+    if customer_filter:
+        query += ' AND c.customer = ?'
+        params.append(customer_filter)
+
+    stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
+    all_cases = conn.execute(query, params).fetchall()
     case_ids = [c['id'] for c in all_cases]
     stage_rows_map = _case_stage_rows(conn, case_ids)
+    today = date.today()
 
     stage_cnt = {s['id']: 0 for s in stages}
     done_count = 0
     blocked_cases = []
     progress_by_case = {}
+    hit = {s['id']: {'hit': 0, 'total': 0, 'rows': []} for s in stages}
+    attention = []
 
     for c in all_cases:
         rows = stage_rows_map.get(c['id'], [])
@@ -456,6 +476,7 @@ def dashboard():
             done_count += 1
         elif summary['current_stage_id'] is not None:
             stage_cnt[summary['current_stage_id']] = stage_cnt.get(summary['current_stage_id'], 0) + 1
+        category = c['product_category'] or (c['product_tech'] if c['product_tech'] in PRODUCT_CATEGORIES else '其他')
         for r in rows:
             if r['status'] in ('卡關', '延遲'):
                 blocked_cases.append({
@@ -463,8 +484,42 @@ def dashboard():
                     'stage_name': r['name'], 'stage_color': r['color'],
                     'status': r['status'], 'status_color': STAGE_STATUS_COLORS.get(r['status']),
                 })
+            baseline = date.fromisoformat(r['baseline_date']) if r['baseline_date'] else None
+            if r['status'] == '完成' and baseline and r['plan_date']:
+                diff = (date.fromisoformat(r['plan_date']) - baseline).days
+                h = hit[r['stage_id']]
+                h['total'] += 1
+                h['hit'] += diff <= 0
+                h['rows'].append({'case_id': c['id'], 'title': c['title'], 'owner_name': c['owner_name'],
+                                  'baseline': r['baseline_date'], 'actual': r['plan_date'], 'diff': diff})
+            elif r['status'] not in ('完成', 'NA') and baseline and baseline < today:
+                attention.append({
+                    'case_id': c['id'], 'title': c['title'], 'device': c['device'], 'owner_name': c['owner_name'],
+                    'department': c['department'], 'category': category, 'stage_name': r['name'],
+                    'stage_color': r['color'], 'status': r['status'],
+                    'status_color': STAGE_STATUS_COLORS.get(r['status']), 'baseline': r['baseline_date'],
+                    'plan_date': r['plan_date'], 'overdue_days': (today - baseline).days,
+                })
 
     blocked_case_count = len({b['case_id'] for b in blocked_cases})
+    attention.sort(key=lambda a: -a['overdue_days'])
+    attention = attention[:15]
+
+    def gauge(name, color, hit_count, total, rows):
+        pct = hit_count * 100 / total if total else 0
+        return {'name': name, 'color': color, 'hit': hit_count, 'total': total, 'pct': pct,
+                'rows': sorted(rows, key=lambda x: -x['diff'])}
+
+    gauges = [gauge('全部階段', '#6366f1', sum(h['hit'] for h in hit.values()),
+                    sum(h['total'] for h in hit.values()),
+                    [dict(r, stage=s['name']) for s in stages for r in hit[s['id']]['rows']])]
+    gauges += [gauge(s['name'], s['color'], hit[s['id']]['hit'], hit[s['id']]['total'], hit[s['id']]['rows'])
+               for s in stages]
+
+    years = [r[0] for r in conn.execute(
+        "SELECT DISTINCT strftime('%Y', created_at, 'localtime') FROM cases ORDER BY 1 DESC")]
+    customers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT customer FROM cases WHERE customer IS NOT NULL AND customer != '' ORDER BY customer")]
 
     stage_counts = [{'id': s['id'], 'name': s['name'], 'color': s['color'], 'cnt': stage_cnt.get(s['id'], 0)}
                     for s in stages]
@@ -482,13 +537,11 @@ def dashboard():
             st['done_cnt'] += 1
     by_engineer = sorted(engineer_stats.values(), key=lambda x: (-x['total'], x['display_name']))
 
-    recent_raw = conn.execute('''
-        SELECT c.*, u.display_name AS owner_name, datetime(c.updated_at, 'localtime') AS updated_local
-        FROM cases c JOIN users u ON u.id = c.owner_id
-        ORDER BY c.updated_at DESC LIMIT 10
-    ''').fetchall()
-    recent = [{**dict(c), **progress_by_case.get(c['id'], _case_progress(stage_rows_map.get(c['id'], [])))}
-              for c in recent_raw]
+    recent_cases = sorted(all_cases, key=lambda c: c['updated_at'], reverse=True)[:10]
+    local_updated = {r[0]: r[1] for r in conn.execute(
+        "SELECT id, datetime(updated_at, 'localtime') FROM cases")}
+    recent = [{**dict(c), **progress_by_case[c['id']], 'updated_local': local_updated[c['id']]}
+              for c in recent_cases]
 
     return render_template('dashboard.html',
                             stage_counts=stage_counts,
@@ -497,7 +550,12 @@ def dashboard():
                             blocked_cases=blocked_cases,
                             blocked_case_count=blocked_case_count,
                             by_engineer=by_engineer,
-                            recent=recent)
+                            recent=recent,
+                            gauges=gauges,
+                            attention=attention,
+                            departments=DEPARTMENTS, years=years, customers=customers,
+                            department_filter=department_filter, year_filter=year_filter,
+                            customer_filter=customer_filter)
 
 
 # ── Cases ────────────────────────────────────────────────────────────────

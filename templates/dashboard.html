@@ -2,29 +2,132 @@
 {% block title %}總覽 - NPI 案件追蹤{% endblock %}
 {% block content %}
 
-<div class="stat-row">
-  <div class="stat-card">
-    <div class="stat-value">{{ total_cases }}</div>
-    <div class="stat-label">總案件數</div>
-  </div>
-  {% for s in stage_counts %}
-  <div class="stat-card">
-    <div class="stat-value" style="color: {{ s.color }}">{{ s.cnt }}</div>
-    <div class="stat-label">{{ s.name }}</div>
-  </div>
-  {% endfor %}
-  <div class="stat-card">
-    <div class="stat-value" style="color: #16a34a">{{ done_count }}</div>
-    <div class="stat-label">已全部完成</div>
-  </div>
-  <div class="stat-card {{ 'stat-danger' if blocked_case_count > 0 }}">
-    <div class="stat-value">{{ blocked_case_count }}</div>
-    <div class="stat-label">卡關/延遲中</div>
-  </div>
+<div class="dash-filters">
+  <form method="get" class="filters">
+    <label>部門篩選：</label>
+    <select name="department" onchange="this.form.submit()">
+      <option value="">全部部門</option>
+      {% for d in departments %}<option value="{{ d }}" {{ 'selected' if department_filter == d }}>{{ d }}</option>{% endfor %}
+    </select>
+    <label>年份篩選：</label>
+    <select name="year" onchange="this.form.submit()">
+      <option value="">全部年份</option>
+      {% for y in years %}<option value="{{ y }}" {{ 'selected' if year_filter == y }}>{{ y }}</option>{% endfor %}
+    </select>
+    <label>客戶篩選：</label>
+    <select name="customer" onchange="this.form.submit()">
+      <option value="">全部客戶</option>
+      {% for c in customers %}<option value="{{ c }}" {{ 'selected' if customer_filter == c }}>{{ c }}</option>{% endfor %}
+    </select>
+    {% if department_filter or year_filter or customer_filter %}
+    <a href="{{ url_for('dashboard') }}" class="link-btn">清除篩選</a>
+    {% endif %}
+  </form>
+  <button type="button" class="btn-refresh" onclick="location.reload()">重新整理</button>
 </div>
+<p class="hint">年份依案件建立日；以下所有區塊都套用這些篩選。</p>
 
-<div class="card">
-  <h2>各工程師負載</h2>
+<details class="card dash-section" open>
+  <summary>整體達標率 (Hit Rate)</summary>
+  <div class="info-box">
+    <b>什麼是「達標百分比」？</b><br>
+    達標率代表在指定條件內，已完成階段的「實際完成日 ≤ Baseline（原始承諾日）」的比例。<br>
+    Baseline 在「編輯各階段時程與狀態」設定，客戶正式改期時才重設；沒有 Baseline 或實際日的已完成階段不計入。
+  </div>
+  <div class="gauge-grid">
+    {% for gauge in gauges %}
+    <div class="gauge-card">
+      <div class="gauge-title">{{ gauge.name }} 達標率</div>
+      <svg viewBox="0 0 42 42" class="gauge">
+        <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e5e7eb" stroke-width="5"></circle>
+        {% if gauge.total and gauge.pct > 0 %}
+        <circle cx="21" cy="21" r="15.915" fill="none" stroke="{{ gauge.color }}" stroke-width="5"
+                stroke-dasharray="{{ gauge.pct }} {{ 100 - gauge.pct }}" stroke-dashoffset="25"></circle>
+        {% endif %}
+        <text x="21" y="22" text-anchor="middle" class="gauge-pct">{{ gauge.pct|round|int }}%</text>
+        <text x="21" y="26.5" text-anchor="middle" class="gauge-sub">{{ gauge.hit }} / {{ gauge.total }} 件</text>
+      </svg>
+      <details class="gauge-detail">
+        <summary>查看 Done 案件明細</summary>
+        {% if gauge.rows %}
+        <table>
+          <thead><tr>{% if gauge.rows[0].stage %}<th>階段</th>{% endif %}<th>案件</th><th>負責人</th><th>Baseline</th><th>實際日</th><th>差異</th></tr></thead>
+          <tbody>
+            {% for row in gauge.rows %}
+            <tr>
+              {% if row.stage %}<td>{{ row.stage }}</td>{% endif %}
+              <td><a href="{{ url_for('case_stages', case_id=row.case_id) }}">{{ row.title }}</a></td>
+              <td>{{ row.owner_name }}</td>
+              <td>{{ row.baseline }}</td>
+              <td>{{ row.actual }}</td>
+              <td>{% if row.diff > 0 %}<span class="danger">晚 {{ row.diff }} 天</span>{% elif row.diff < 0 %}<span class="success">早 {{ -row.diff }} 天</span>{% else %}準時{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="empty">沒有符合的已完成階段</p>
+        {% endif %}
+      </details>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+
+<details class="card dash-section" open>
+  <summary>需關注案件 (Top 15 嚴重超時)</summary>
+  <p class="hint">系統自動抓出尚未完成、且已超過 Baseline（原始承諾日）最久的前 15 個階段，建議優先跟進催處理。</p>
+  {% if attention %}
+  <table>
+    <thead><tr><th>階段</th><th>部門</th><th>案件 / Device</th><th>分類</th><th>負責人</th><th>狀態</th><th>Baseline</th><th>目前計畫日</th><th>超時天數</th></tr></thead>
+    <tbody>
+      {% for a in attention %}
+      <tr>
+        <td><span class="pill" style="background: {{ a.stage_color }}">{{ a.stage_name }}</span></td>
+        <td>{{ a.department or '' }}</td>
+        <td><a href="{{ url_for('case_stages', case_id=a.case_id) }}">{{ a.title }}</a>{% if a.device %} <span class="hint">/ {{ a.device }}</span>{% endif %}</td>
+        <td>{{ a.category }}</td>
+        <td>{{ a.owner_name }}</td>
+        <td><span class="pill" style="background: {{ a.status_color }}">{{ a.status }}</span></td>
+        <td>{{ a.baseline }}</td>
+        <td>{{ a.plan_date or '—' }}</td>
+        <td class="danger">{{ a.overdue_days }} 天</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">目前沒有超過 Baseline 的未完成階段</p>
+  {% endif %}
+</details>
+
+<details class="card dash-section" open>
+  <summary>案件概況</summary>
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-value">{{ total_cases }}</div>
+      <div class="stat-label">總案件數</div>
+    </div>
+    {% for s in stage_counts %}
+    <div class="stat-card">
+      <div class="stat-value" style="color: {{ s.color }}">{{ s.cnt }}</div>
+      <div class="stat-label">{{ s.name }}</div>
+    </div>
+    {% endfor %}
+    <div class="stat-card">
+      <div class="stat-value" style="color: #16a34a">{{ done_count }}</div>
+      <div class="stat-label">已全部完成</div>
+    </div>
+    <div class="stat-card {{ 'stat-danger' if blocked_case_count > 0 }}">
+      <div class="stat-value">{{ blocked_case_count }}</div>
+      <div class="stat-label">卡關/延遲中</div>
+    </div>
+  </div>
+  <p class="hint">各階段的數字是「目前正在該階段」的案件數。</p>
+</details>
+
+<details class="card dash-section" open>
+  <summary>各工程師負載</summary>
   {% if by_engineer %}
   <table>
     <thead><tr><th>工程師</th><th>案件數</th><th>已完成</th></tr></thead>
@@ -41,17 +144,17 @@
   {% else %}
   <p class="empty">還沒有任何案件</p>
   {% endif %}
-</div>
+</details>
 
-<div class="card">
-  <h2>卡關 / 延遲中的階段</h2>
+<details class="card dash-section" open>
+  <summary>卡關 / 延遲中的階段</summary>
   {% if blocked_cases %}
   <table>
     <thead><tr><th>案名</th><th>負責人</th><th>階段</th><th>狀態</th></tr></thead>
     <tbody>
       {% for b in blocked_cases %}
       <tr>
-        <td><a href="{{ url_for('case_edit', case_id=b.case_id) }}">{{ b.title }}</a></td>
+        <td><a href="{{ url_for('case_stages', case_id=b.case_id) }}">{{ b.title }}</a></td>
         <td>{{ b.owner_name }}</td>
         <td><span class="pill" style="background: {{ b.stage_color }}">{{ b.stage_name }}</span></td>
         <td><span class="pill" style="background: {{ b.status_color }}">{{ b.status }}</span></td>
@@ -62,10 +165,10 @@
   {% else %}
   <p class="empty">目前沒有卡關或延遲的階段</p>
   {% endif %}
-</div>
+</details>
 
-<div class="card">
-  <h2>最近更新</h2>
+<details class="card dash-section" open>
+  <summary>最近更新</summary>
   {% if recent %}
   <table>
     <thead><tr><th>案名</th><th>負責人</th><th>目前階段</th><th>最新備註</th><th>更新時間</th></tr></thead>
@@ -91,6 +194,6 @@
   {% else %}
   <p class="empty">還沒有任何案件</p>
   {% endif %}
-</div>
+</details>
 
 {% endblock %}
