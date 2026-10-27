@@ -33,7 +33,7 @@
   {% if cases %}
   <table>
     <thead>
-      <tr><th>案名</th><th>負責工程師</th><th>部門</th><th>客戶</th><th>截止日</th><th>目前階段</th><th>最新備註</th><th></th></tr>
+      <tr><th>案名</th><th>負責工程師</th><th>部門</th><th>客戶</th><th>目前階段</th><th>最新備註</th><th></th></tr>
     </thead>
     <tbody>
       {% for c in cases %}
@@ -42,7 +42,6 @@
         <td>{{ c.owner_name }}</td>
         <td>{{ c.department or '' }}</td>
         <td>{{ c.customer or '' }}</td>
-        <td>{{ c.due_date or '' }}</td>
         <td>
           {% if c.all_done %}
           <span class="pill" style="background: #16a34a">已全部完成</span>

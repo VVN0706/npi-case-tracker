@@ -28,9 +28,6 @@
     <label>客戶</label>
     <input type="text" name="customer" value="{{ case.customer if case else '' }}">
 
-    <label>預計完成日</label>
-    <input type="date" name="due_date" value="{{ case.due_date if case else '' }}">
-
     <h3 class="form-section">基本資料</h3>
     <div class="basic-grid">
       {% for col, label in basic_fields %}

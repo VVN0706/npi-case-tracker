@@ -17,62 +17,30 @@
     <div class="stat-value" style="color: #16a34a">{{ done_count }}</div>
     <div class="stat-label">已全部完成</div>
   </div>
-  <div class="stat-card {{ 'stat-danger' if overdue|length > 0 }}">
-    <div class="stat-value">{{ overdue|length }}</div>
-    <div class="stat-label">逾期未完成</div>
-  </div>
   <div class="stat-card {{ 'stat-danger' if blocked_case_count > 0 }}">
     <div class="stat-value">{{ blocked_case_count }}</div>
     <div class="stat-label">卡關/延遲中</div>
   </div>
 </div>
 
-<div class="grid-2">
-  <div class="card">
-    <h2>各工程師負載</h2>
-    {% if by_engineer %}
-    <table>
-      <thead><tr><th>工程師</th><th>案件數</th><th>已完成</th></tr></thead>
-      <tbody>
-        {% for e in by_engineer %}
-        <tr>
-          <td>{{ e.display_name }}</td>
-          <td>{{ e.total }}</td>
-          <td>{{ e.done_cnt or 0 }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="empty">還沒有任何案件</p>
-    {% endif %}
-  </div>
-
-  <div class="card">
-    <h2>逾期未完成</h2>
-    {% if overdue %}
-    <table>
-      <thead><tr><th>案名</th><th>負責人</th><th>截止日</th><th>目前階段</th></tr></thead>
-      <tbody>
-        {% for c in overdue %}
-        <tr>
-          <td><a href="{{ url_for('case_edit', case_id=c.id) }}">{{ c.title }}</a></td>
-          <td>{{ c.owner_name }}</td>
-          <td class="danger">{{ c.due_date }}</td>
-          <td>
-            {% if c.current_stage_name %}
-            <span class="pill" style="background: {{ c.current_stage_color }}">{{ c.current_stage_name }}</span>
-            <span class="pill" style="background: {{ c.current_status_color }}">{{ c.current_status }}</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="empty">目前沒有逾期案件</p>
-    {% endif %}
-  </div>
+<div class="card">
+  <h2>各工程師負載</h2>
+  {% if by_engineer %}
+  <table>
+    <thead><tr><th>工程師</th><th>案件數</th><th>已完成</th></tr></thead>
+    <tbody>
+      {% for e in by_engineer %}
+      <tr>
+        <td>{{ e.display_name }}</td>
+        <td>{{ e.total }}</td>
+        <td>{{ e.done_cnt or 0 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">還沒有任何案件</p>
+  {% endif %}
 </div>
 
 <div class="card">

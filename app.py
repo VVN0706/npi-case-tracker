@@ -426,7 +426,6 @@ def _case_progress(stage_rows):
 @login_required
 def dashboard():
     conn = get_db()
-    today = date.today().isoformat()
 
     stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
     all_cases = conn.execute('''
@@ -438,7 +437,6 @@ def dashboard():
 
     stage_cnt = {s['id']: 0 for s in stages}
     done_count = 0
-    overdue = []
     blocked_cases = []
     progress_by_case = {}
 
@@ -450,8 +448,6 @@ def dashboard():
             done_count += 1
         elif summary['current_stage_id'] is not None:
             stage_cnt[summary['current_stage_id']] = stage_cnt.get(summary['current_stage_id'], 0) + 1
-        if c['due_date'] and not summary['all_done'] and c['due_date'] < today:
-            overdue.append({**dict(c), **summary})
         for r in rows:
             if r['status'] in ('卡關', '延遲'):
                 blocked_cases.append({
@@ -460,7 +456,6 @@ def dashboard():
                     'status': r['status'], 'status_color': STAGE_STATUS_COLORS.get(r['status']),
                 })
 
-    overdue.sort(key=lambda c: c['due_date'])
     blocked_case_count = len({b['case_id'] for b in blocked_cases})
 
     stage_counts = [{'id': s['id'], 'name': s['name'], 'color': s['color'], 'cnt': stage_cnt.get(s['id'], 0)}
@@ -491,12 +486,10 @@ def dashboard():
                             stage_counts=stage_counts,
                             total_cases=len(all_cases),
                             done_count=done_count,
-                            overdue=overdue,
                             blocked_cases=blocked_cases,
                             blocked_case_count=blocked_case_count,
                             by_engineer=by_engineer,
-                            recent=recent,
-                            today=today)
+                            recent=recent)
 
 
 # ── Cases ────────────────────────────────────────────────────────────────
@@ -574,10 +567,10 @@ def case_new():
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context()), 400
         department = _user_department(conn, owner_id)
-        cols = ['title', 'owner_id', 'department', 'customer', 'due_date', 'note', 'created_by'] + BASIC_COLS
+        cols = ['title', 'owner_id', 'department', 'customer', 'note', 'created_by'] + BASIC_COLS
         cur = conn.execute(
             f'INSERT INTO cases ({",".join(cols)}) VALUES ({",".join("?" * len(cols))})',
-            [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
+            [title, owner_id, department, request.form.get('customer', ''),
              request.form.get('note', ''), session['user_id']] + [request.form.get(c, '').strip() for c in BASIC_COLS])
         _sync_case_stage_rows(conn)
         _apply_stage_form(conn, cur.lastrowid, request.form, session['user_id'], log=False)
@@ -605,10 +598,10 @@ def case_edit(case_id):
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context(case)), 400
         department = _user_department(conn, owner_id)
-        set_cols = ['title', 'owner_id', 'department', 'customer', 'due_date', 'note'] + BASIC_COLS
+        set_cols = ['title', 'owner_id', 'department', 'customer', 'note'] + BASIC_COLS
         conn.execute(
             f"UPDATE cases SET {', '.join(c + '=?' for c in set_cols)}, updated_at=datetime('now') WHERE id=?",
-            [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
+            [title, owner_id, department, request.form.get('customer', ''),
              request.form.get('note', '')] + [request.form.get(c, '').strip() for c in BASIC_COLS] + [case_id])
         conn.commit()
         return redirect(url_for('case_list'))
