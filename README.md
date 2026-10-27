@@ -9,7 +9,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-啟動後開啟 http://127.0.0.1:8090
+啟動後開啟 http://127.0.0.1:5050
 
 第一次啟動會自動建立資料庫（`case_tracker.db`，已在 .gitignore 中排除）與預設管理員帳號：
 

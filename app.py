@@ -1074,6 +1074,6 @@ def admin_stage_delete(stage_id):
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=8090)
+    app.run(debug=True, port=5050)
 else:
     init_db()

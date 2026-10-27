@@ -10,7 +10,7 @@ if getattr(sys, 'frozen', False):
 
 from app import app
 
-PORT = int(os.environ.get('NPI_CASE_PORT', 8090))
+PORT = int(os.environ.get('NPI_CASE_PORT', 5050))
 
 
 def open_browser():
