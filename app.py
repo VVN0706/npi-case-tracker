@@ -49,7 +49,6 @@ BASIC_FIELDS = [
     ('design_owner', 'Design Owner'),
     ('forecast', 'Forecast'),
     ('tra_level', 'TRA Level'),
-    ('excel_row', 'Excel 列號'),
 ]
 BASIC_COLS = [c for c, _ in BASIC_FIELDS]
 

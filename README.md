@@ -26,6 +26,6 @@ python app.py
   - 修改階段狀態時可填「實際發生日」，週統計以此日期為準；每次狀態變更都記在 `case_stage_status_log`（歷史從此功能上線後開始累積）
 - 案件列表：可依工程師 / 目前階段 / 部門篩選
 - 新增 / 編輯 / 刪除案件（只有負責工程師本人或管理員可修改）
-- 案件基本資料：產品屬性、產品應用、Product / Tech、Type Application、SBT/LF 圖號與料號、Turnkey、NPDM、PD Owner、Design Owner、Forecast、TRA Level、Excel 列號，另顯示最後更新時間
+- 案件基本資料：產品屬性、產品應用、Product / Tech、Type Application、SBT/LF 圖號與料號、Turnkey、NPDM、PD Owner、Design Owner、Forecast、TRA Level，另顯示最後更新時間
 - 工程師有部門（2620/2640/2650），案件的部門自動跟著負責工程師走
 - 管理員：新增使用者帳號與部門、自訂階段名稱/顏色/完成判定基準
