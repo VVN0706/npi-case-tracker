@@ -116,8 +116,15 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .legend li { margin: 4px 0; }
 .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
 .breakdown { flex: 1; min-width: 260px; }
-.breakdown-card { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; font-size: 14px; }
-.breakdown-detail { color: var(--text-muted); margin-left: 8px; }
+.legend li { cursor: pointer; }
+.slice { cursor: pointer; }
+.bucket-card { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; margin-bottom: 10px; font-size: 14px; background: var(--card-bg); }
+.bucket-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; }
+.bucket-toggle { margin-left: auto; border: 1px solid var(--border); border-radius: 6px; min-width: 28px; text-align: center; line-height: 24px; color: var(--text-muted); }
+.bucket-body { padding: 0 14px 12px; overflow-x: auto; }
+.bucket-body[hidden] { display: none; }
+.bucket-body table { font-size: 12px; white-space: nowrap; }
+.breakdown-detail { color: var(--text-muted); }
 
 .form-section { font-size: 14px; margin: 24px 0 0; padding-top: 14px; border-top: 1px solid var(--border); }
 .basic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }

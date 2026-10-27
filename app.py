@@ -833,8 +833,11 @@ def weekly():
     owner_filter = request.args.get('owner', '')
 
     query = '''
-        SELECT l.case_id, l.stage_id, l.new_status, c.customer
-        FROM case_stage_status_log l JOIN cases c ON c.id = l.case_id
+        SELECT l.case_id, l.stage_id, l.new_status, l.occurred_on, c.title, c.customer, c.customer_code,
+               c.device, c.pkg, c.pkg_size, c.sbt_lf_drawing_no, c.department, u.display_name AS owner_name
+        FROM case_stage_status_log l
+        JOIN cases c ON c.id = l.case_id
+        JOIN users u ON u.id = c.owner_id
         WHERE l.occurred_on BETWEEN ? AND ?
     '''
     params = [monday.isoformat(), sunday.isoformat()]
@@ -852,31 +855,36 @@ def weekly():
     # Only the last change per case+stage within the week counts.
     latest = {}
     for r in conn.execute(query, params):
-        latest[(r['case_id'], r['stage_id'])] = r
+        latest[(r['case_id'], r['stage_id'])] = dict(r)
 
     sections = []
     for s in conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall():
-        counts = {b: 0 for b in BUCKETS}
-        by_customer = {b: {} for b in BUCKETS}
+        rows_by_bucket = {b: [] for b in BUCKETS}
         for (_, stage_id), r in latest.items():
             bucket = STATUS_BUCKET.get(r['new_status'])
-            if stage_id != s['id'] or bucket is None:
-                continue
-            counts[bucket] += 1
-            name = r['customer'] or '（未填客戶）'
-            by_customer[bucket][name] = by_customer[bucket].get(name, 0) + 1
-        total = sum(counts.values())
+            if stage_id == s['id'] and bucket is not None:
+                rows_by_bucket[bucket].append(r)
+        total = sum(len(rows) for rows in rows_by_bucket.values())
         segments = []
         offset = 25
         for b in BUCKETS:
-            pct = counts[b] * 100 / total if total else 0
-            segments.append({'bucket': b, 'count': counts[b], 'pct': pct, 'gap': 100 - pct,
+            pct = len(rows_by_bucket[b]) * 100 / total if total else 0
+            segments.append({'bucket': b, 'count': len(rows_by_bucket[b]), 'pct': pct, 'gap': 100 - pct,
                              'offset': offset, 'color': BUCKET_COLORS[b]})
             offset -= pct
-        sections.append({
-            'stage': s, 'total': total, 'segments': segments,
-            'breakdown': {b: sorted(by_customer[b].items(), key=lambda kv: (-kv[1], kv[0])) for b in BUCKETS},
-        })
+        cards = []
+        for b in reversed(BUCKETS):  # Done, Ongoing, Wait
+            rows = sorted(rows_by_bucket[b], key=lambda x: (x['occurred_on'], x['title']), reverse=True)
+            if not rows:
+                continue
+            counts = {}
+            for r in rows:
+                label = r['customer_code'] or r['customer'] or '（未填客戶）'
+                counts[label] = counts.get(label, 0) + 1
+            cards.append({'bucket': b, 'label': 'On-going' if b == 'Ongoing' else b, 'color': BUCKET_COLORS[b],
+                          'count': len(rows), 'rows': rows,
+                          'summary': '　'.join(f'{k}*{v}' for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))})
+        sections.append({'stage': s, 'total': total, 'segments': segments, 'cards': cards})
 
     earliest = conn.execute('SELECT MIN(occurred_on) FROM case_stage_status_log').fetchone()[0]
     earliest_monday = cur_monday
@@ -898,7 +906,7 @@ def weekly():
         "SELECT DISTINCT customer FROM cases WHERE customer IS NOT NULL AND customer != '' ORDER BY customer")]
     users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
 
-    return render_template('weekly.html', sections=sections, buckets=BUCKETS, bucket_colors=BUCKET_COLORS,
+    return render_template('weekly.html', sections=sections, status_colors=STAGE_STATUS_COLORS,
                             weeks=weeks, week_value=week_value, customers=customers, users=users,
                             departments=DEPARTMENTS, department_filter=department_filter,
                             customer_filter=customer_filter, owner_filter=owner_filter)

@@ -48,27 +48,55 @@
       <svg viewBox="0 0 42 42" class="donut">
         <circle cx="21" cy="21" r="15.915" fill="none" stroke="#e5e7eb" stroke-width="6"></circle>
         {% for seg in sec.segments if seg.count %}
-        <circle cx="21" cy="21" r="15.915" fill="none" stroke="{{ seg.color }}" stroke-width="6"
+        <circle class="slice" data-toggle-bucket="{{ seg.bucket }}" cx="21" cy="21" r="15.915" fill="none" stroke="{{ seg.color }}" stroke-width="6"
                 stroke-dasharray="{{ seg.pct }} {{ seg.gap }}" stroke-dashoffset="{{ seg.offset }}">
-          <title>{{ seg.bucket }}：{{ seg.count }} 件</title>
+          <title>{{ seg.bucket }}：{{ seg.count }} 件（點一下展開明細）</title>
         </circle>
         {% endfor %}
         <text x="21" y="21.5" text-anchor="middle" class="donut-total">{{ sec.total }}</text>
         <text x="21" y="26" text-anchor="middle" class="donut-unit">件</text>
       </svg>
-      <ul class="legend">
-        {% for seg in sec.segments %}
-        <li><span class="dot" style="background: {{ seg.color }}"></span>{{ seg.bucket }}：<b>{{ seg.count }}</b>（{{ seg.pct|round|int }}%）</li>
-        {% endfor %}
-      </ul>
+      <div>
+        <ul class="legend">
+          {% for seg in sec.segments %}
+          <li data-toggle-bucket="{{ seg.bucket }}"><span class="dot" style="background: {{ seg.color }}"></span>{{ seg.bucket }}：<b>{{ seg.count }}</b>（{{ seg.pct|round|int }}%）</li>
+          {% endfor %}
+        </ul>
+        <p class="hint">點扇形或圖例展開明細</p>
+      </div>
     </div>
     <div class="breakdown">
-      {% for seg in sec.segments if seg.count %}
-      <div class="breakdown-card" style="border-left-color: {{ seg.color }}">
-        <b>{{ seg.bucket }} {{ seg.count }}件</b>
-        <span class="breakdown-detail">
-          {% for name, n in sec.breakdown[seg.bucket] %}{{ name }}*{{ n }}{% if not loop.last %}　{% endif %}{% endfor %}
-        </span>
+      {% for card in sec.cards %}
+      <div class="bucket-card" data-bucket="{{ card.bucket }}" style="border-left-color: {{ card.color }}">
+        <div class="bucket-head">
+          <b>{{ card.label }} {{ card.count }}件</b>
+          <span class="breakdown-detail">（{{ card.summary }}）</span>
+          <span class="bucket-toggle">＋</span>
+        </div>
+        <div class="bucket-body" hidden>
+          <table>
+            <thead>
+              <tr><th>案名</th><th>狀態</th><th>發生日</th><th>客戶代碼</th><th>客戶名稱</th><th>Device</th><th>PKG</th><th>PKG size (mm)</th><th>SBT / LF 圖號</th><th>負責人</th><th>部門</th></tr>
+            </thead>
+            <tbody>
+              {% for r in card.rows %}
+              <tr>
+                <td><a href="{{ url_for('case_stages', case_id=r.case_id) }}">{{ r.title }}</a></td>
+                <td><span class="pill" style="background: {{ status_colors.get(r.new_status) }}">{{ r.new_status }}</span></td>
+                <td>{{ r.occurred_on }}</td>
+                <td>{{ r.customer_code or '' }}</td>
+                <td>{{ r.customer or '' }}</td>
+                <td>{{ r.device or '' }}</td>
+                <td>{{ r.pkg or '' }}</td>
+                <td>{{ r.pkg_size or '' }}</td>
+                <td>{{ r.sbt_lf_drawing_no or '' }}</td>
+                <td>{{ r.owner_name }}</td>
+                <td>{{ r.department or '' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
       {% endfor %}
     </div>
@@ -78,5 +106,23 @@
   {% endif %}
 </details>
 {% endfor %}
+
+<script>
+document.addEventListener('click', function (e) {
+  var trigger = e.target.closest('.bucket-head, [data-toggle-bucket]');
+  if (!trigger) return;
+  var card;
+  if (trigger.classList.contains('bucket-head')) {
+    card = trigger.parentElement;
+  } else {
+    var section = trigger.closest('.week-section');
+    card = section.querySelector('.bucket-card[data-bucket="' + trigger.getAttribute('data-toggle-bucket') + '"]');
+  }
+  if (!card) return;
+  var body = card.querySelector('.bucket-body');
+  body.hidden = !body.hidden;
+  card.querySelector('.bucket-toggle').textContent = body.hidden ? '＋' : '－';
+});
+</script>
 
 {% endblock %}

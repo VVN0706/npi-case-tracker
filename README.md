@@ -28,8 +28,8 @@ python app.py
   - 整體達標率：已完成階段中「實際完成日 ≤ Baseline」的比例，每個階段一個圓環（開案 Kick-off 暫不顯示，見 `HIT_RATE_HIDDEN_STAGES`），可展開查看明細
   - 需關注案件：尚未完成且超過 Baseline 最久的前 15 個階段
   - 案件概況（各階段案件數、已全部完成、卡關/延遲中）、各工程師負載、卡關/延遲中的階段、最近更新
-- 週統計：選週別（週一～週日）看各階段當週實際發生的狀態變化，分 Wait/Ongoing/Done 畫圓餅圖並列出各客戶件數，可依部門 / 客戶 / 人員篩選
-  - 修改階段狀態時可填「實際發生日」，週統計以此日期為準；每次狀態變更都記在 `case_stage_status_log`（歷史從此功能上線後開始累積）
+- 週統計：選週別（週一～週日）看各階段當週實際發生的狀態變化，分 Wait/Ongoing/Done 畫圓餅圖，右側每個狀態一張卡片列出各客戶件數，點扇形、圖例或卡片可展開案件明細表，可依部門 / 客戶 / 人員篩選
+  - 已達成階段以其「計畫/實際日」所在的週計入；每次狀態變更都記在 `case_stage_status_log`（歷史從此功能上線後開始累積）
 - 案件列表：可依工程師 / 目前階段 / 部門篩選
 - 新增 / 編輯 / 刪除案件（只有負責工程師本人或管理員可修改）
 - 案件基本資料：部門、客戶代碼/名稱、Device、PKG、PKG size、SBT / LF 圖號與料號、產品屬性、產品應用、Product / Technology、Type Application、Turnkey、NPDM、PD Owner、Design Owner、TRA Level、產品類別（呈報分類）、Forecast，另顯示 Current Phase（自動）與最後更新時間
