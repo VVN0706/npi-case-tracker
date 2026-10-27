@@ -99,13 +99,11 @@ def _log_stage_status(conn, case_id, stage_id, old_status, new_status, occurred_
     ''', (case_id, stage_id, old_status, new_status, occurred_on, user_id))
 
 
-def _parse_occurred_on(value, today):
-    """Validate a user-supplied actual-occurrence date; fall back to today, never in the future."""
+def _clean_date(value):
     try:
-        d = date.fromisoformat(value or '')
+        return date.fromisoformat(value or '').isoformat()
     except ValueError:
-        return today
-    return min(d, date.fromisoformat(today)).isoformat()
+        return ''
 
 
 def init_db():
@@ -161,7 +159,24 @@ def init_db():
                 case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
                 stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
                 status TEXT NOT NULL DEFAULT '未開始',
+                plan_date TEXT NOT NULL DEFAULT '',
+                baseline_date TEXT NOT NULL DEFAULT '',
+                not_applicable INTEGER NOT NULL DEFAULT 0,
+                achieved INTEGER NOT NULL DEFAULT 0,
+                manual_status TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (case_id, stage_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS case_stage_change_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+                stage_id INTEGER NOT NULL REFERENCES stages(id) ON DELETE CASCADE,
+                field TEXT NOT NULL,
+                old_value TEXT NOT NULL DEFAULT '',
+                new_value TEXT NOT NULL DEFAULT '',
+                reason TEXT NOT NULL DEFAULT '',
+                changed_by INTEGER REFERENCES users(id),
+                changed_at TEXT DEFAULT (datetime('now'))
             );
 
             CREATE TABLE IF NOT EXISTS case_stage_status_log (
@@ -187,6 +202,17 @@ def init_db():
         for col in BASIC_COLS:
             if col not in case_cols:
                 conn.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
+
+        stage_cols = {r['name'] for r in conn.execute('PRAGMA table_info(case_stage_status)')}
+        if 'manual_status' not in stage_cols:
+            for ddl in ("plan_date TEXT NOT NULL DEFAULT ''", "baseline_date TEXT NOT NULL DEFAULT ''",
+                        'not_applicable INTEGER NOT NULL DEFAULT 0', 'achieved INTEGER NOT NULL DEFAULT 0',
+                        "manual_status TEXT NOT NULL DEFAULT ''"):
+                conn.execute(f'ALTER TABLE case_stage_status ADD COLUMN {ddl}')
+            # Carry the old hand-set statuses over: 完成/NA become flags, the rest stay manual overrides.
+            conn.execute("UPDATE case_stage_status SET achieved=1 WHERE status='完成'")
+            conn.execute("UPDATE case_stage_status SET not_applicable=1 WHERE status='NA'")
+            conn.execute("UPDATE case_stage_status SET manual_status=status WHERE status IN ('進行中','延遲','卡關')")
 
         if conn.execute('SELECT COUNT(*) FROM stages').fetchone()[0] == 0:
             for i, (name, color, description) in enumerate(DEFAULT_STAGES):
@@ -306,13 +332,39 @@ def change_password():
 
 # ── Case progress helpers ──────────────────────────────────────────────────
 
+def _compute_statuses(rows, today, use_manual=True):
+    """Status per stage (rows in stage order): manual override > 不適用 > 已達成 > 逾期 > 目前輪到 > 未開始."""
+    result = []
+    current_seen = False
+    for r in rows:
+        if use_manual and r['manual_status']:
+            status = r['manual_status']
+        elif r['not_applicable']:
+            status = 'NA'
+        elif r['achieved']:
+            status = '完成'
+        elif r['plan_date'] and r['plan_date'] < today:
+            status = '延遲'
+        elif not current_seen:
+            status = '進行中'
+        else:
+            status = '未開始'
+        if status not in ('完成', 'NA'):
+            current_seen = True
+        result.append(status)
+    return result
+
+
 def _case_stage_rows(conn, case_ids):
-    """{case_id: [ {stage_id, name, color, sort_order, status}, ... ]} ordered by stage sort_order."""
+    """{case_id: [stage dict, ...]} in stage order. 'status' is the computed status,
+    'auto_status' what it would be without a manual override, 'recorded_status' the last one logged."""
     if not case_ids:
         return {}
     placeholders = ','.join('?' * len(case_ids))
     rows = conn.execute(f'''
-        SELECT css.case_id, s.id AS stage_id, s.name, s.color, s.sort_order, css.status
+        SELECT css.case_id, s.id AS stage_id, s.name, s.color, s.sort_order, s.description,
+               css.plan_date, css.baseline_date, css.not_applicable, css.achieved, css.manual_status,
+               css.status AS recorded_status
         FROM case_stage_status css
         JOIN stages s ON s.id = css.stage_id
         WHERE css.case_id IN ({placeholders})
@@ -320,8 +372,27 @@ def _case_stage_rows(conn, case_ids):
     ''', case_ids).fetchall()
     result = {}
     for r in rows:
-        result.setdefault(r['case_id'], []).append(r)
+        result.setdefault(r['case_id'], []).append(dict(r))
+    today = date.today().isoformat()
+    for stage_rows in result.values():
+        for r, status, auto in zip(stage_rows, _compute_statuses(stage_rows, today),
+                                   _compute_statuses(stage_rows, today, use_manual=False)):
+            r['status'] = status
+            r['auto_status'] = auto
     return result
+
+
+def _record_status_changes(conn, case_id, user_id, initial=False):
+    """Log every stage whose computed status differs from the last recorded one (all of them when initial)."""
+    today = date.today().isoformat()
+    for r in _case_stage_rows(conn, [case_id]).get(case_id, []):
+        old = None if initial else r['recorded_status']
+        if not initial and r['status'] == old:
+            continue
+        occurred_on = min(r['plan_date'], today) if r['status'] == '完成' and r['plan_date'] else today
+        conn.execute('UPDATE case_stage_status SET status=? WHERE case_id=? AND stage_id=?',
+                     (r['status'], case_id, r['stage_id']))
+        _log_stage_status(conn, case_id, r['stage_id'], old, r['status'], occurred_on, user_id)
 
 
 def _case_progress(stage_rows):
@@ -476,18 +547,14 @@ def _case_form_context(case=None):
     conn = get_db()
     users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
     stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
-    stage_status_map = {}
-    if case:
-        rows = conn.execute('SELECT stage_id, status FROM case_stage_status WHERE case_id=?',
-                             (case['id'],)).fetchall()
-        stage_status_map = {r['stage_id']: r['status'] for r in rows}
+    stage_summary = []
     updated_local = ''
     if case:
+        stage_summary = _case_stage_rows(conn, [case['id']]).get(case['id'], [])
         updated_local = conn.execute("SELECT datetime(updated_at, 'localtime') FROM cases WHERE id=?",
                                       (case['id'],)).fetchone()[0]
     return dict(case=case, users=users, stages=stages, basic_fields=BASIC_FIELDS, updated_local=updated_local,
-                stage_statuses=STAGE_STATUSES, stage_status_map=stage_status_map,
-                stage_status_colors=STAGE_STATUS_COLORS, today=date.today().isoformat())
+                stage_summary=stage_summary, stage_status_colors=STAGE_STATUS_COLORS)
 
 
 def _user_department(conn, user_id):
@@ -513,9 +580,7 @@ def case_new():
             [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
              request.form.get('note', ''), session['user_id']] + [request.form.get(c, '').strip() for c in BASIC_COLS])
         _sync_case_stage_rows(conn)
-        today = date.today().isoformat()
-        for s in conn.execute('SELECT id FROM stages').fetchall():
-            _log_stage_status(conn, cur.lastrowid, s['id'], None, '未開始', today, session['user_id'])
+        _record_status_changes(conn, cur.lastrowid, session['user_id'], initial=True)
         conn.commit()
         return redirect(url_for('case_edit', case_id=cur.lastrowid))
     return render_template('case_form.html', **_case_form_context())
@@ -544,23 +609,90 @@ def case_edit(case_id):
             f"UPDATE cases SET {', '.join(c + '=?' for c in set_cols)}, updated_at=datetime('now') WHERE id=?",
             [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
              request.form.get('note', '')] + [request.form.get(c, '').strip() for c in BASIC_COLS] + [case_id])
-
-        today = date.today().isoformat()
-        current = {r['stage_id']: r['status'] for r in conn.execute(
-            'SELECT stage_id, status FROM case_stage_status WHERE case_id=?', (case_id,))}
-        for s in conn.execute('SELECT id FROM stages').fetchall():
-            value = request.form.get(f'stage_status_{s["id"]}')
-            old = current.get(s['id'])
-            if value not in STAGE_STATUSES or value == old:
-                continue
-            conn.execute('UPDATE case_stage_status SET status=? WHERE case_id=? AND stage_id=?',
-                         (value, case_id, s['id']))
-            occurred_on = _parse_occurred_on(request.form.get(f'stage_date_{s["id"]}'), today)
-            _log_stage_status(conn, case_id, s['id'], old, value, occurred_on, session['user_id'])
         conn.commit()
         return redirect(url_for('case_list'))
 
     return render_template('case_form.html', **_case_form_context(case))
+
+
+STAGE_FIELDS = [
+    ('plan_date', '計畫/實際日'),
+    ('baseline_date', 'Baseline'),
+    ('not_applicable', '不適用'),
+    ('achieved', '已達成'),
+    ('manual_status', '狀態（手動指定）'),
+]
+
+
+def _fmt_stage_value(col, value):
+    if col in ('not_applicable', 'achieved'):
+        return '是' if value else '否'
+    if col == 'manual_status':
+        return value or '自動'
+    return value or '—'
+
+
+@app.route('/cases/<int:case_id>/stages', methods=['GET', 'POST'])
+@login_required
+def case_stages(case_id):
+    conn = get_db()
+    case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
+    if not case:
+        return render_template('error.html', message='找不到這個案件'), 404
+    if not can_edit_case(case):
+        return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
+
+    if request.method == 'POST':
+        reason = request.form.get('reason', '').strip()
+        reset_baseline = request.form.get('action') == 'reset_baseline'
+        for old in _case_stage_rows(conn, [case_id]).get(case_id, []):
+            sid = old['stage_id']
+            plan = _clean_date(request.form.get(f'plan_date_{sid}'))
+            baseline = _clean_date(request.form.get(f'baseline_date_{sid}'))
+            manual = request.form.get(f'manual_{sid}', '')
+            new = {
+                'plan_date': plan,
+                # The first date entered becomes the baseline; later changes leave it alone.
+                'baseline_date': plan if reset_baseline else (baseline or plan),
+                'not_applicable': 1 if request.form.get(f'na_{sid}') else 0,
+                'achieved': 1 if request.form.get(f'achieved_{sid}') else 0,
+                'manual_status': manual if manual in STAGE_STATUSES else '',
+            }
+            for col, label in STAGE_FIELDS:
+                if new[col] != old[col]:
+                    conn.execute('''
+                        INSERT INTO case_stage_change_log
+                            (case_id, stage_id, field, old_value, new_value, reason, changed_by)
+                        VALUES (?,?,?,?,?,?,?)
+                    ''', (case_id, sid, label, _fmt_stage_value(col, old[col]), _fmt_stage_value(col, new[col]),
+                          reason, session['user_id']))
+            conn.execute('''
+                UPDATE case_stage_status
+                SET plan_date=?, baseline_date=?, not_applicable=?, achieved=?, manual_status=?
+                WHERE case_id=? AND stage_id=?
+            ''', (new['plan_date'], new['baseline_date'], new['not_applicable'], new['achieved'],
+                  new['manual_status'], case_id, sid))
+        conn.execute("UPDATE cases SET updated_at=datetime('now') WHERE id=?", (case_id,))
+        _record_status_changes(conn, case_id, session['user_id'])
+        conn.commit()
+        return redirect(url_for('case_stages', case_id=case_id, saved=1))
+
+    rows = _case_stage_rows(conn, [case_id]).get(case_id, [])
+    for r in rows:
+        r['delta_days'] = None
+        if r['plan_date'] and r['baseline_date']:
+            r['delta_days'] = (date.fromisoformat(r['plan_date']) - date.fromisoformat(r['baseline_date'])).days
+    history = conn.execute('''
+        SELECT datetime(l.changed_at, 'localtime') AS at, s.name AS stage_name, l.field, l.old_value,
+               l.new_value, l.reason, u.display_name AS who
+        FROM case_stage_change_log l
+        JOIN stages s ON s.id = l.stage_id
+        LEFT JOIN users u ON u.id = l.changed_by
+        WHERE l.case_id=? ORDER BY l.id DESC LIMIT 50
+    ''', (case_id,)).fetchall()
+    return render_template('case_stages.html', case=case, rows=rows, history=history,
+                            stage_statuses=STAGE_STATUSES, stage_status_colors=STAGE_STATUS_COLORS,
+                            today=date.today().isoformat(), saved=request.args.get('saved'))
 
 
 @app.route('/cases/<int:case_id>/delete', methods=['POST'])
@@ -783,7 +915,8 @@ def admin_stages():
                 error = '這個階段已經存在'
     stages = conn.execute('''
         SELECT s.*,
-               COALESCE(SUM(CASE WHEN css.status != '未開始' THEN 1 ELSE 0 END), 0) AS active_case_count
+               COALESCE(SUM(CASE WHEN css.plan_date != '' OR css.baseline_date != '' OR css.not_applicable = 1
+                                  OR css.achieved = 1 OR css.manual_status != '' THEN 1 ELSE 0 END), 0) AS active_case_count
         FROM stages s
         LEFT JOIN case_stage_status css ON css.stage_id = s.id
         GROUP BY s.id ORDER BY s.sort_order
@@ -809,9 +942,11 @@ def admin_stage_edit(stage_id):
 @admin_required
 def admin_stage_delete(stage_id):
     conn = get_db()
-    in_use = conn.execute(
-        "SELECT COUNT(*) FROM case_stage_status WHERE stage_id=? AND status!='未開始'",
-        (stage_id,)).fetchone()[0]
+    in_use = conn.execute('''
+        SELECT COUNT(*) FROM case_stage_status
+        WHERE stage_id=? AND (plan_date != '' OR baseline_date != '' OR not_applicable = 1
+                              OR achieved = 1 OR manual_status != '')
+    ''', (stage_id,)).fetchone()[0]
     if in_use == 0:
         conn.execute('DELETE FROM stages WHERE id=?', (stage_id,))
         conn.commit()

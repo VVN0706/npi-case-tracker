@@ -123,6 +123,16 @@ th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform
 .basic-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 @media (max-width: 520px) { .basic-grid { grid-template-columns: 1fr; } }
 
+.stage-edit-table input[type=date], .stage-edit-table select { width: auto; }
+.stage-edit-table select { margin-right: 6px; }
+.achieve { display: inline-block; margin: 0; }
+.achieve input { display: none; }
+.achieve span { display: inline-block; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.achieve input:checked + span { background: var(--success); border-color: var(--success); color: #fff; }
+.stage-actions { margin-top: 20px; display: flex; align-items: center; gap: 16px; }
+.stage-actions .btn-reset { order: -1; margin-right: auto; background: var(--card-bg); color: var(--text); border: 1px solid var(--border); }
+.stage-actions .btn-reset:hover { background: var(--bg); }
+
 .stage-status-table { margin-top: 6px; }
 .stage-status-table select { width: auto; font-weight: 600; border: none; padding: 6px 10px; }
 

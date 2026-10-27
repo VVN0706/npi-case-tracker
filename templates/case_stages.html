@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}編輯各階段 - NPI 案件追蹤{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>編輯各階段時程與狀態：{{ case.title }}</h2>
+  {% if saved %}<p class="success">已儲存</p>{% endif %}
+  <p class="hint">
+    「計畫/實際日」為目前預估或實際達成日；Baseline 為原始承諾日（用來算延遲天數），第一次填日期時會自動帶入，一般不要改，客戶正式改期時才「重設 Baseline」。<br>
+    狀態預設自動判定：不適用→NA；已達成→完成；未達成且計畫日已過→延遲；目前輪到的階段→進行中；其餘→未開始。卡關無法由日期判斷，需手動指定。<br>
+    階段已實際達成：按該列「✓ 已達成」，把日期改成實際達成日後儲存，系統會自動推進到下一階段，原 Baseline 保留以顯示實際較計畫晚／早幾天。
+  </p>
+
+  <form method="post" id="stagesForm">
+    <table class="stage-edit-table">
+      <thead>
+        <tr><th>階段</th><th>計畫 / 實際日</th><th>Baseline</th><th>較 Baseline</th><th>不適用</th><th>狀態判定</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><span class="pill" style="background: {{ r.color }}" title="{{ r.description }}">{{ r.name }}</span></td>
+          <td><input type="date" name="plan_date_{{ r.stage_id }}" value="{{ r.plan_date }}"></td>
+          <td><input type="date" name="baseline_date_{{ r.stage_id }}" value="{{ r.baseline_date }}"></td>
+          <td>
+            {% if r.delta_days is none %}—
+            {% elif r.delta_days > 0 %}<span class="danger">晚 {{ r.delta_days }} 天</span>
+            {% elif r.delta_days < 0 %}<span class="success">早 {{ -r.delta_days }} 天</span>
+            {% else %}準時{% endif %}
+          </td>
+          <td><input type="checkbox" name="na_{{ r.stage_id }}" {{ 'checked' if r.not_applicable }}></td>
+          <td>
+            <select name="manual_{{ r.stage_id }}">
+              <option value="" {{ 'selected' if not r.manual_status }}>自動（目前：{{ r.auto_status }}）</option>
+              {% for st in stage_statuses %}
+              <option value="{{ st }}" {{ 'selected' if r.manual_status == st }}>{{ st }}</option>
+              {% endfor %}
+            </select>
+            <span class="pill" style="background: {{ stage_status_colors.get(r.status) }}">{{ r.status }}</span>
+          </td>
+          <td>
+            <label class="achieve"><input type="checkbox" name="achieved_{{ r.stage_id }}" {{ 'checked' if r.achieved }}><span>✓ 已達成</span></label>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <label>變更原因（會寫入變更紀錄，例如：客戶 wafer 延到 10 月）</label>
+    <input type="text" name="reason">
+
+    <div class="stage-actions">
+      <button type="submit" name="action" value="save">儲存</button>
+      <a href="{{ url_for('case_edit', case_id=case.id) }}" class="link-btn">返回案件</a>
+      <button type="submit" name="action" value="reset_baseline" class="btn-reset"
+              onclick="return confirm('確定要以目前的計畫日重設全部 Baseline 嗎？（會一併儲存畫面上的修改）');">以目前計畫日重設全部 Baseline</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>變更紀錄</h2>
+  {% if history %}
+  <table>
+    <thead><tr><th>時間</th><th>階段</th><th>項目</th><th>原值</th><th>新值</th><th>原因</th><th>操作人</th></tr></thead>
+    <tbody>
+      {% for h in history %}
+      <tr>
+        <td>{{ h.at }}</td><td>{{ h.stage_name }}</td><td>{{ h.field }}</td>
+        <td>{{ h.old_value }}</td><td>{{ h.new_value }}</td><td>{{ h.reason }}</td><td>{{ h.who or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">還沒有變更紀錄</p>
+  {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.achieve input').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    var d = cb.closest('tr').querySelector('input[type=date][name^=plan_date]');
+    if (cb.checked && !d.value) d.value = '{{ today }}';
+  });
+});
+</script>
+
+{% endblock %}

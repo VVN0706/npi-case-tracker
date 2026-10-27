@@ -64,29 +64,6 @@
     <label>最新備註</label>
     <textarea name="note" rows="4">{{ case.note if case else '' }}</textarea>
 
-    {% if case %}
-    <label>各階段狀態</label>
-    <table class="stage-status-table">
-      <thead><tr><th>階段</th><th>狀態</th><th>實際發生日</th></tr></thead>
-      <tbody>
-        {% for s in stages %}
-        <tr>
-          <td><span class="pill" style="background: {{ s.color }}" title="{{ s.description }}">{{ s.name }}</span></td>
-          <td>
-            <select name="stage_status_{{ s.id }}" style="background: {{ stage_status_colors.get(stage_status_map.get(s.id, '未開始')) }}; color:#fff">
-              {% for st in stage_statuses %}
-              <option value="{{ st }}" {{ 'selected' if stage_status_map.get(s.id, '未開始') == st }}>{{ st }}</option>
-              {% endfor %}
-            </select>
-          </td>
-          <td><input type="date" name="stage_date_{{ s.id }}" value="{{ today }}" max="{{ today }}" style="width:auto"></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <p class="hint">只有狀態有變更的階段才會記錄，並以「實際發生日」計入週統計（預設今天，可改成實際完成的日期）。</p>
-    {% endif %}
-
     <div class="form-actions">
       <button type="submit">{{ '儲存' if case else '建立案件' }}</button>
       <a href="{{ url_for('case_list') }}" class="link-btn">取消</a>
@@ -94,6 +71,21 @@
   </form>
 
   {% if case %}
+  <h3 class="form-section">各階段狀態</h3>
+  <table class="stage-status-table">
+    <thead><tr><th>階段</th><th>計畫/實際日</th><th>狀態</th></tr></thead>
+    <tbody>
+      {% for r in stage_summary %}
+      <tr>
+        <td><span class="pill" style="background: {{ r.color }}" title="{{ r.description }}">{{ r.name }}</span></td>
+        <td>{{ r.plan_date or '—' }}</td>
+        <td><span class="pill" style="background: {{ stage_status_colors.get(r.status) }}">{{ r.status }}</span>{% if r.manual_status %} <span class="hint">手動</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="form-actions"><a href="{{ url_for('case_stages', case_id=case.id) }}" class="btn-new">編輯各階段時程與狀態</a></p>
+
   <form method="post" action="{{ url_for('case_delete', case_id=case.id) }}" onsubmit="return confirm('確定要刪除這個案件嗎？');">
     <button type="submit" class="btn-danger">刪除</button>
   </form>
