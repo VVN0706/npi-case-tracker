@@ -4,7 +4,7 @@ import secrets
 import sqlite3
 from datetime import date, timedelta
 
-from flask import Flask, g, redirect, render_template, request, session, url_for
+from flask import Flask, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -930,17 +930,24 @@ def admin_user_edit(user_id):
         display_name = request.form.get('display_name', '').strip()
         department = request.form.get('department', '')
         is_admin = 1 if request.form.get('is_admin') else 0
+        new_password = request.form.get('new_password', '')
         if not username or not display_name:
             error = '請填寫帳號、姓名'
         elif department not in DEPARTMENTS and department != '':
             error = '部門不正確'
+        elif new_password and len(new_password) < 4:
+            error = '新密碼至少需要 4 個字元（不想改密碼請留空）'
         else:
             try:
                 conn.execute(
                     'UPDATE users SET username=?, display_name=?, department=?, is_admin=? WHERE id=?',
                     (username, display_name, department, is_admin, user_id))
                 conn.execute('UPDATE cases SET department=? WHERE owner_id=?', (department, user_id))
+                if new_password:
+                    conn.execute('UPDATE users SET password_hash=? WHERE id=?',
+                                 (generate_password_hash(new_password), user_id))
                 conn.commit()
+                flash(f'已更新 {display_name}' + ('，並重設密碼' if new_password else ''), 'success')
                 return redirect(url_for('admin_users'))
             except sqlite3.IntegrityError:
                 error = '這個帳號已經存在'
@@ -955,10 +962,16 @@ def admin_user_edit(user_id):
 def admin_reset_password(user_id):
     conn = get_db()
     new_password = request.form.get('new_password', '')
-    if len(new_password) >= 4:
+    user = conn.execute('SELECT display_name FROM users WHERE id=?', (user_id,)).fetchone()
+    if not user:
+        flash('找不到這個使用者', 'error')
+    elif len(new_password) < 4:
+        flash(f'{user["display_name"]} 的密碼未變更：新密碼至少需要 4 個字元', 'error')
+    else:
         conn.execute('UPDATE users SET password_hash=? WHERE id=?',
                      (generate_password_hash(new_password), user_id))
         conn.commit()
+        flash(f'已重設 {user["display_name"]} 的密碼', 'success')
     return redirect(url_for('admin_users'))
 
 

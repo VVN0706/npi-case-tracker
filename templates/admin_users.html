@@ -2,6 +2,14 @@
 {% block title %}使用者管理 - NPI 案件追蹤{% endblock %}
 {% block content %}
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="card">
+  {% for category, message in messages %}<p class="{{ category }}" style="margin:4px 0">{{ message }}</p>{% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
 <div class="card">
   <h2>新增工程師帳號</h2>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
@@ -35,7 +43,7 @@
         <td><a href="{{ url_for('admin_user_edit', user_id=u.id) }}">編輯</a></td>
         <td>
           <form method="post" action="{{ url_for('admin_reset_password', user_id=u.id) }}" class="inline-form">
-            <input type="password" name="new_password" placeholder="新密碼" style="width:120px">
+            <input type="password" name="new_password" placeholder="新密碼(至少4碼)" required minlength="4" autocomplete="new-password" style="width:140px">
             <button type="submit">重設</button>
           </form>
         </td>

@@ -20,6 +20,9 @@
       {% endfor %}
     </select>
 
+    <label>重設密碼（留空表示不變更，至少 4 個字元）</label>
+    <input type="password" name="new_password" minlength="4" autocomplete="new-password">
+
     <label class="checkbox-label" style="margin-top:16px">
       <input type="checkbox" name="is_admin" {{ 'checked' if user.is_admin }}> 管理員
     </label>
