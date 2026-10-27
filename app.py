@@ -59,6 +59,7 @@ BASIC_COLS = [c for c, _ in BASIC_FIELDS]
 BASIC_LABELS = dict(BASIC_FIELDS)
 FORECAST_OPTIONS = ['無', '有']
 PRODUCT_CATEGORIES = ['DRAM', 'Flash', 'MCP', 'FC', '其他']
+HIT_RATE_HIDDEN_STAGES = ['開案 Kick-off']
 
 
 def get_db():
@@ -510,11 +511,8 @@ def dashboard():
         return {'name': name, 'color': color, 'hit': hit_count, 'total': total, 'pct': pct,
                 'rows': sorted(rows, key=lambda x: -x['diff'])}
 
-    gauges = [gauge('全部階段', '#6366f1', sum(h['hit'] for h in hit.values()),
-                    sum(h['total'] for h in hit.values()),
-                    [dict(r, stage=s['name']) for s in stages for r in hit[s['id']]['rows']])]
-    gauges += [gauge(s['name'], s['color'], hit[s['id']]['hit'], hit[s['id']]['total'], hit[s['id']]['rows'])
-               for s in stages]
+    gauges = [gauge(s['name'], s['color'], hit[s['id']]['hit'], hit[s['id']]['total'], hit[s['id']]['rows'])
+              for s in stages if s['name'] not in HIT_RATE_HIDDEN_STAGES]
 
     years = [r[0] for r in conn.execute(
         "SELECT DISTINCT strftime('%Y', created_at, 'localtime') FROM cases ORDER BY 1 DESC")]
