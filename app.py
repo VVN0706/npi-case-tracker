@@ -248,6 +248,9 @@ def init_db():
                 FROM case_stage_status css JOIN cases c ON c.id = css.case_id
             ''')
 
+        for (case_id,) in conn.execute('SELECT id FROM cases').fetchall():
+            _sync_done_event_dates(conn, case_id)
+
         app.secret_key = _get_or_create_secret_key(conn)
         conn.commit()
 
@@ -402,6 +405,29 @@ def _record_status_changes(conn, case_id, user_id, initial=False):
         conn.execute('UPDATE case_stage_status SET status=? WHERE case_id=? AND stage_id=?',
                      (r['status'], case_id, r['stage_id']))
         _log_stage_status(conn, case_id, r['stage_id'], old, r['status'], occurred_on, user_id)
+    _sync_done_event_dates(conn, case_id, user_id)
+
+
+def _sync_done_event_dates(conn, case_id, user_id=None):
+    """Keep each completed stage's 完成 event on its actual date, so editing that date moves it between weeks."""
+    today = date.today().isoformat()
+    for r in _case_stage_rows(conn, [case_id]).get(case_id, []):
+        if r['status'] != '完成' or not r['plan_date']:
+            continue
+        target = min(r['plan_date'], today)
+        event = conn.execute('''
+            SELECT id, occurred_on FROM case_stage_status_log
+            WHERE case_id=? AND stage_id=? AND new_status='完成' ORDER BY id DESC LIMIT 1
+        ''', (case_id, r['stage_id'])).fetchone()
+        if event is None:
+            _log_stage_status(conn, case_id, r['stage_id'], None, '完成', target, user_id)
+        elif event['occurred_on'] != target:
+            conn.execute('UPDATE case_stage_status_log SET occurred_on=? WHERE id=?', (target, event['id']))
+            # Earlier events sharing the old date were pulled onto it by a backdated completion; move them along.
+            conn.execute('''
+                UPDATE case_stage_status_log SET occurred_on=?
+                WHERE case_id=? AND stage_id=? AND id<? AND (occurred_on>? OR occurred_on=?)
+            ''', (target, case_id, r['stage_id'], event['id'], target, event['occurred_on']))
 
 
 def _case_progress(stage_rows):
