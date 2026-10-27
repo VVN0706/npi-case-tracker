@@ -31,6 +31,22 @@
     <label>預計完成日</label>
     <input type="date" name="due_date" value="{{ case.due_date if case else '' }}">
 
+    <h3 class="form-section">基本資料</h3>
+    <div class="basic-grid">
+      {% for col, label in basic_fields %}
+      <div>
+        <label>{{ label }}</label>
+        <input type="text" name="{{ col }}" value="{{ case[col] if case else '' }}">
+      </div>
+      {% endfor %}
+      {% if case %}
+      <div>
+        <label>最後更新</label>
+        <input type="text" value="{{ updated_local }}" disabled>
+      </div>
+      {% endif %}
+    </div>
+
     <details class="stage-ref">
       <summary>各階段「完成」判定基準</summary>
       <table>

@@ -36,6 +36,22 @@ STAGE_STATUS_COLORS = {
 STATUS_BUCKET = {'未開始': 'Wait', '進行中': 'Ongoing', '延遲': 'Ongoing', '卡關': 'Ongoing', '完成': 'Done'}
 BUCKETS = ['Wait', 'Ongoing', 'Done']
 BUCKET_COLORS = {'Wait': '#9ca3af', 'Ongoing': '#3b82f6', 'Done': '#16a34a'}
+BASIC_FIELDS = [
+    ('product_attr', '產品屬性'),
+    ('product_app', '產品應用'),
+    ('product_tech', 'Product / Tech'),
+    ('type_application', 'Type Application'),
+    ('sbt_lf_drawing_no', 'SBT/LF 圖號'),
+    ('sbt_lf_part_no', 'SBT/LF 料號'),
+    ('turnkey', 'Turnkey'),
+    ('npdm', 'NPDM'),
+    ('pd_owner', 'PD Owner'),
+    ('design_owner', 'Design Owner'),
+    ('forecast', 'Forecast'),
+    ('tra_level', 'TRA Level'),
+    ('excel_row', 'Excel 列號'),
+]
+BASIC_COLS = [c for c, _ in BASIC_FIELDS]
 
 
 def get_db():
@@ -169,6 +185,9 @@ def init_db():
         case_cols = {r['name'] for r in conn.execute('PRAGMA table_info(cases)')}
         if 'department' not in case_cols:
             conn.execute("ALTER TABLE cases ADD COLUMN department TEXT NOT NULL DEFAULT ''")
+        for col in BASIC_COLS:
+            if col not in case_cols:
+                conn.execute(f"ALTER TABLE cases ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
         if conn.execute('SELECT COUNT(*) FROM stages').fetchone()[0] == 0:
             for i, (name, color, description) in enumerate(DEFAULT_STAGES):
@@ -391,7 +410,7 @@ def dashboard():
     by_engineer = sorted(engineer_stats.values(), key=lambda x: (-x['total'], x['display_name']))
 
     recent_raw = conn.execute('''
-        SELECT c.*, u.display_name AS owner_name
+        SELECT c.*, u.display_name AS owner_name, datetime(c.updated_at, 'localtime') AS updated_local
         FROM cases c JOIN users u ON u.id = c.owner_id
         ORDER BY c.updated_at DESC LIMIT 10
     ''').fetchall()
@@ -463,7 +482,11 @@ def _case_form_context(case=None):
         rows = conn.execute('SELECT stage_id, status FROM case_stage_status WHERE case_id=?',
                              (case['id'],)).fetchall()
         stage_status_map = {r['stage_id']: r['status'] for r in rows}
-    return dict(case=case, users=users, stages=stages,
+    updated_local = ''
+    if case:
+        updated_local = conn.execute("SELECT datetime(updated_at, 'localtime') FROM cases WHERE id=?",
+                                      (case['id'],)).fetchone()[0]
+    return dict(case=case, users=users, stages=stages, basic_fields=BASIC_FIELDS, updated_local=updated_local,
                 stage_statuses=STAGE_STATUSES, stage_status_map=stage_status_map,
                 stage_status_colors=STAGE_STATUS_COLORS, today=date.today().isoformat())
 
@@ -485,11 +508,11 @@ def case_new():
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context()), 400
         department = _user_department(conn, owner_id)
-        cur = conn.execute('''
-            INSERT INTO cases (title, owner_id, department, customer, due_date, note, created_by)
-            VALUES (?,?,?,?,?,?,?)
-        ''', (title, owner_id, department, request.form.get('customer', ''),
-              request.form.get('due_date') or None, request.form.get('note', ''), session['user_id']))
+        cols = ['title', 'owner_id', 'department', 'customer', 'due_date', 'note', 'created_by'] + BASIC_COLS
+        cur = conn.execute(
+            f'INSERT INTO cases ({",".join(cols)}) VALUES ({",".join("?" * len(cols))})',
+            [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
+             request.form.get('note', ''), session['user_id']] + [request.form.get(c, '').strip() for c in BASIC_COLS])
         _sync_case_stage_rows(conn)
         today = date.today().isoformat()
         for s in conn.execute('SELECT id FROM stages').fetchall():
@@ -517,12 +540,11 @@ def case_edit(case_id):
         if not title:
             return render_template('case_form.html', error='案名為必填', **_case_form_context(case)), 400
         department = _user_department(conn, owner_id)
-        conn.execute('''
-            UPDATE cases SET title=?, owner_id=?, department=?, customer=?, due_date=?, note=?,
-                updated_at=datetime('now')
-            WHERE id=?
-        ''', (title, owner_id, department, request.form.get('customer', ''),
-              request.form.get('due_date') or None, request.form.get('note', ''), case_id))
+        set_cols = ['title', 'owner_id', 'department', 'customer', 'due_date', 'note'] + BASIC_COLS
+        conn.execute(
+            f"UPDATE cases SET {', '.join(c + '=?' for c in set_cols)}, updated_at=datetime('now') WHERE id=?",
+            [title, owner_id, department, request.form.get('customer', ''), request.form.get('due_date') or None,
+             request.form.get('note', '')] + [request.form.get(c, '').strip() for c in BASIC_COLS] + [case_id])
 
         today = date.today().isoformat()
         current = {r['stage_id']: r['status'] for r in conn.execute(
