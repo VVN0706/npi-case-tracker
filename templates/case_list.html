@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}案件列表 - NPI 案件追蹤{% endblock %}
+{% block main_class %}wide{% endblock %}
 {% block content %}
 
 <div class="card">
@@ -31,17 +32,15 @@
   </div>
 
   {% if cases %}
+  <div class="table-scroll">
   <table>
     <thead>
-      <tr><th>案名</th><th>負責工程師</th><th>部門</th><th>客戶</th><th>目前階段</th><th>最新備註</th><th></th></tr>
+      <tr><th>案名</th><th>目前階段</th><th>客戶代碼</th><th>客戶名稱</th><th>Device</th><th>PKG</th><th>PKG size (mm)</th><th>SBT / LF 圖號</th><th>SBT / LF 料號</th><th>產品類別</th><th>負責人</th><th>部門</th><th>最新備註</th><th>最後更新</th><th></th></tr>
     </thead>
     <tbody>
       {% for c in cases %}
       <tr>
         <td><a href="{{ url_for('case_edit', case_id=c.id) }}">{{ c.title }}</a></td>
-        <td>{{ c.owner_name }}</td>
-        <td>{{ c.department or '' }}</td>
-        <td>{{ c.customer or '' }}</td>
         <td>
           {% if c.all_done %}
           <span class="pill" style="background: #16a34a">已全部完成</span>
@@ -53,12 +52,24 @@
           <span class="danger" title="有 {{ c.blocked_count }} 個階段延遲或卡關">⚠ {{ c.blocked_count }}</span>
           {% endif %}
         </td>
+        <td>{{ c.customer_code or '' }}</td>
+        <td>{{ c.customer or '' }}</td>
+        <td>{{ c.device or '' }}</td>
+        <td>{{ c.pkg or '' }}</td>
+        <td>{{ c.pkg_size or '' }}</td>
+        <td>{{ c.sbt_lf_drawing_no or '' }}</td>
+        <td>{{ c.sbt_lf_part_no or '' }}</td>
+        <td>{{ c.category }}</td>
+        <td>{{ c.owner_name }}</td>
+        <td>{{ c.department or '' }}</td>
         <td class="note-cell">{{ c.note or '' }}</td>
+        <td>{{ c.updated_local }}</td>
         <td><a href="{{ url_for('case_edit', case_id=c.id) }}">編輯</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p class="empty">沒有符合條件的案件</p>
   {% endif %}

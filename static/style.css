@@ -29,6 +29,8 @@ a:hover { text-decoration: underline; }
   padding: 24px 20px 60px;
 }
 
+.container.wide { max-width: none; }
+
 .topbar {
   display: flex;
   align-items: center;
@@ -94,6 +96,8 @@ a:hover { text-decoration: underline; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+.table-scroll { overflow-x: auto; }
+.table-scroll table { white-space: nowrap; }
 .note-cell { color: var(--text-muted); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty { color: var(--text-muted); font-size: 14px; }
 .danger { color: var(--danger); font-weight: 600; }

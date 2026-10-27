@@ -593,7 +593,7 @@ def case_list():
     department_filter = request.args.get('department', '')
 
     query = '''
-        SELECT c.*, u.display_name AS owner_name
+        SELECT c.*, u.display_name AS owner_name, datetime(c.updated_at, 'localtime') AS updated_local
         FROM cases c
         JOIN users u ON u.id = c.owner_id
         WHERE 1=1
@@ -615,7 +615,8 @@ def case_list():
         summary = _case_progress(stage_rows_map.get(c['id'], []))
         if stage_filter and str(summary.get('current_stage_id')) != stage_filter:
             continue
-        cases.append({**dict(c), **summary})
+        category = c['product_category'] or (c['product_tech'] if c['product_tech'] in PRODUCT_CATEGORIES else '其他')
+        cases.append({**dict(c), **summary, 'category': category})
 
     users = conn.execute('SELECT * FROM users WHERE active=1 ORDER BY display_name').fetchall()
     stages = conn.execute('SELECT * FROM stages ORDER BY sort_order').fetchall()
