@@ -58,7 +58,7 @@ BASIC_FIELDS = [
 BASIC_COLS = [c for c, _ in BASIC_FIELDS]
 BASIC_LABELS = dict(BASIC_FIELDS)
 FORECAST_OPTIONS = ['無', '有']
-PRODUCT_CATEGORIES = ['其他']  # full 呈報分類 list not provided yet
+PRODUCT_CATEGORIES = ['DRAM', 'Flash', 'MCP', 'FC', '其他']
 
 
 def get_db():
