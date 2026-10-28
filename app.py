@@ -296,6 +296,13 @@ def load_current_user():
         }
 
 
+def _safe_next(target):
+    """Only follow same-site paths after login, never a full URL someone put in ?next=."""
+    if target and target.startswith('/') and not target.startswith('//') and '\\' not in target:
+        return target
+    return url_for('dashboard')
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -310,14 +317,16 @@ def login():
         session['display_name'] = user['display_name']
         session['department'] = user['department']
         session['is_admin'] = bool(user['is_admin'])
-        return redirect(request.args.get('next') or url_for('dashboard'))
+        return redirect(_safe_next(request.args.get('next')))
+    if 'user_id' in session:
+        return redirect(_safe_next(request.args.get('next')))
     return render_template('login.html')
 
 
 @app.route('/logout', methods=['POST'])
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('dashboard'))
 
 
 @app.route('/me/password', methods=['GET', 'POST'])
@@ -458,7 +467,6 @@ def _case_progress(stage_rows):
 # ── Dashboard ────────────────────────────────────────────────────────────
 
 @app.route('/')
-@login_required
 def dashboard():
     conn = get_db()
 
@@ -585,7 +593,6 @@ def dashboard():
 # ── Cases ────────────────────────────────────────────────────────────────
 
 @app.route('/cases')
-@login_required
 def case_list():
     conn = get_db()
     owner_filter = request.args.get('owner', '')
@@ -641,7 +648,12 @@ def _case_form_context(case=None):
         progress = _case_progress(stage_summary)
         current_phase = '已全部完成' if progress['all_done'] else (progress['current_stage_name'] or '—')
     product_tech = case['product_tech'] if case else ''
+    owner_name = session.get('display_name', '')
+    if case:
+        owner = conn.execute('SELECT display_name FROM users WHERE id=?', (case['owner_id'],)).fetchone()
+        owner_name = owner['display_name'] if owner else ''
     return dict(case=case, users=users, stages=stages, labels=BASIC_LABELS, updated_local=updated_local,
+                owner_name=owner_name,
                 stage_summary=stage_summary, stage_status_colors=STAGE_STATUS_COLORS,
                 current_phase=current_phase, forecast_options=FORECAST_OPTIONS,
                 product_categories=PRODUCT_CATEGORIES,
@@ -679,16 +691,18 @@ def case_new():
 
 
 @app.route('/cases/<int:case_id>/edit', methods=['GET', 'POST'])
-@login_required
 def case_edit(case_id):
     conn = get_db()
     case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
     if not case:
         return render_template('error.html', message='找不到這個案件'), 404
-    if not can_edit_case(case):
-        return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
+    editable = can_edit_case(case)
 
     if request.method == 'POST':
+        if 'user_id' not in session:
+            return redirect(url_for('login', next=request.path))
+        if not editable:
+            return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
         title = request.form.get('title', '').strip()
         owner_id = case['owner_id']
         if session.get('is_admin'):
@@ -704,7 +718,7 @@ def case_edit(case_id):
         conn.commit()
         return redirect(url_for('case_list'))
 
-    return render_template('case_form.html', **_case_form_context(case))
+    return render_template('case_form.html', readonly=not editable, **_case_form_context(case))
 
 
 STAGE_FIELDS = [
@@ -757,16 +771,18 @@ def _apply_stage_form(conn, case_id, form, user_id, reason='', reset_baseline=Fa
 
 
 @app.route('/cases/<int:case_id>/stages', methods=['GET', 'POST'])
-@login_required
 def case_stages(case_id):
     conn = get_db()
     case = conn.execute('SELECT * FROM cases WHERE id=?', (case_id,)).fetchone()
     if not case:
         return render_template('error.html', message='找不到這個案件'), 404
-    if not can_edit_case(case):
-        return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
+    editable = can_edit_case(case)
 
     if request.method == 'POST':
+        if 'user_id' not in session:
+            return redirect(url_for('login', next=request.path))
+        if not editable:
+            return render_template('error.html', message='只有負責工程師或管理員才能修改此案件'), 403
         _apply_stage_form(conn, case_id, request.form, session['user_id'],
                           reason=request.form.get('reason', '').strip(),
                           reset_baseline=request.form.get('action') == 'reset_baseline')
@@ -788,7 +804,7 @@ def case_stages(case_id):
         LEFT JOIN users u ON u.id = l.changed_by
         WHERE l.case_id=? ORDER BY l.id DESC LIMIT 50
     ''', (case_id,)).fetchall()
-    return render_template('case_stages.html', case=case, rows=rows, history=history,
+    return render_template('case_stages.html', case=case, rows=rows, history=history, readonly=not editable,
                             stage_statuses=STAGE_STATUSES, stage_status_colors=STAGE_STATUS_COLORS,
                             today=date.today().isoformat(), saved=request.args.get('saved'))
 
@@ -824,7 +840,6 @@ def _iso_week_monday(year, week):
 
 
 @app.route('/weekly')
-@login_required
 def weekly():
     conn = get_db()
     today = date.today()

@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-{% if g.current_user %}
 <header class="topbar">
   <div class="topbar-left">
     <a class="brand" href="{{ url_for('dashboard') }}">NPI 案件追蹤</a>
@@ -15,23 +14,52 @@
       <a href="{{ url_for('dashboard') }}" class="{{ 'active' if request.endpoint == 'dashboard' }}">總覽</a>
       <a href="{{ url_for('case_list') }}" class="{{ 'active' if request.endpoint in ['case_list','case_new','case_edit'] }}">案件列表</a>
       <a href="{{ url_for('weekly') }}" class="{{ 'active' if request.endpoint == 'weekly' }}">週統計</a>
+      {% if g.current_user %}
       <a href="{{ url_for('case_new') }}" class="btn-new">+ 新增案件</a>
       {% if g.current_user.is_admin %}
       <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint == 'admin_users' }}">使用者管理</a>
       <a href="{{ url_for('admin_stages') }}" class="{{ 'active' if request.endpoint == 'admin_stages' }}">階段管理</a>
       {% endif %}
+      {% endif %}
     </nav>
   </div>
   <div class="topbar-right">
+    {% if g.current_user %}
     <a href="{{ url_for('change_password') }}">{{ g.current_user.display_name }}</a>
     <form method="post" action="{{ url_for('logout') }}" style="display:inline">
       <button type="submit" class="link-btn">登出</button>
     </form>
+    {% elif request.endpoint != 'login' %}
+    <div class="login-menu" id="loginMenu">
+      <button type="button" class="btn-login" id="loginToggle" aria-expanded="false">登入</button>
+      <form method="post" action="{{ url_for('login', next=request.full_path.rstrip('?')) }}" class="login-panel">
+        <label>帳號</label>
+        <input type="text" name="username" required autocomplete="username">
+        <label>密碼</label>
+        <input type="password" name="password" required autocomplete="current-password">
+        <button type="submit">登入</button>
+      </form>
+    </div>
+    {% endif %}
   </div>
 </header>
-{% endif %}
 <main class="container {% block main_class %}{% endblock %}">
 {% block content %}{% endblock %}
 </main>
+<script>
+(function () {
+  var menu = document.getElementById('loginMenu');
+  if (!menu) return;
+  var toggle = document.getElementById('loginToggle');
+  function setOpen(open) {
+    menu.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) menu.querySelector('input[name=username]').focus();
+  }
+  toggle.addEventListener('click', function () { setOpen(!menu.classList.contains('open')); });
+  document.addEventListener('click', function (e) { if (!menu.contains(e.target)) setOpen(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setOpen(false); });
+})();
+</script>
 </body>
 </html>

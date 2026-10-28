@@ -1,24 +1,28 @@
 {% extends 'base.html' %}
-{% block title %}{{ '編輯案件' if case else '新增案件' }} - NPI 案件追蹤{% endblock %}
+{% block title %}{{ '案件資料' if readonly else ('編輯案件' if case else '新增案件') }} - NPI 案件追蹤{% endblock %}
 {% block content %}
 
 <div class="card narrow">
-  <h2>{{ '編輯案件' if case else '新增案件' }}</h2>
+  <h2>{{ '案件資料' if readonly else ('編輯案件' if case else '新增案件') }}</h2>
+  {% if readonly %}
+  <p class="readonly-note">{% if g.current_user %}只有負責工程師或管理員可以修改這個案件，你目前只能檢視。{% else %}目前未登入，只能檢視。要修改請由右上角登入。{% endif %}</p>
+  {% endif %}
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form method="post">
+    <fieldset class="plain" {{ 'disabled' if readonly }}>
     <label>案名 *</label>
     <input type="text" name="title" value="{{ case.title if case else '' }}" required>
 
     <label>負責工程師</label>
-    {% if g.current_user.is_admin %}
+    {% if g.current_user and g.current_user.is_admin and not readonly %}
     <select name="owner_id" id="owner_id" onchange="document.getElementById('dept_display').value = this.options[this.selectedIndex].dataset.department || '（無部門）'">
       {% for u in users %}
       <option value="{{ u.id }}" data-department="{{ u.department or '（無部門）' }}" {{ 'selected' if case and case.owner_id == u.id else ('selected' if not case and u.id == g.current_user.id) }}>{{ u.display_name }}</option>
       {% endfor %}
     </select>
     {% else %}
-    <input type="text" value="{{ g.current_user.display_name }}" disabled>
-    <p class="hint">只有管理員可以指派給其他工程師</p>
+    <input type="text" value="{{ owner_name }}" disabled>
+    {% if not readonly %}<p class="hint">只有管理員可以指派給其他工程師</p>{% endif %}
     {% endif %}
 
     <h3 class="form-section">基本資料</h3>
@@ -106,10 +110,11 @@
 
     <label>最新備註</label>
     <textarea name="note" rows="4">{{ case.note if case else '' }}</textarea>
+    </fieldset>
 
     <div class="form-actions">
-      <button type="submit">{{ '儲存' if case else '建立案件' }}</button>
-      <a href="{{ url_for('case_list') }}" class="link-btn">取消</a>
+      {% if not readonly %}<button type="submit">{{ '儲存' if case else '建立案件' }}</button>{% endif %}
+      <a href="{{ url_for('case_list') }}" class="link-btn">{{ '返回案件列表' if readonly else '取消' }}</a>
     </div>
   </form>
 
@@ -127,11 +132,13 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="form-actions"><a href="{{ url_for('case_stages', case_id=case.id) }}" class="btn-new">編輯各階段時程與狀態</a></p>
+  <p class="form-actions"><a href="{{ url_for('case_stages', case_id=case.id) }}" class="btn-new">{{ '檢視各階段時程與變更紀錄' if readonly else '編輯各階段時程與狀態' }}</a></p>
 
+  {% if not readonly %}
   <form method="post" action="{{ url_for('case_delete', case_id=case.id) }}" onsubmit="return confirm('確定要刪除這個案件嗎？');">
     <button type="submit" class="btn-danger">刪除</button>
   </form>
+  {% endif %}
   {% endif %}
 </div>
 

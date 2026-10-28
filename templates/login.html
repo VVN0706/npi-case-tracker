@@ -1,20 +1,18 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>登入 - NPI 案件追蹤</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body class="login-body">
-<form class="login-box" method="post">
-  <h1>NPI 案件追蹤</h1>
+{% extends 'base.html' %}
+{% block title %}登入 - NPI 案件追蹤{% endblock %}
+{% block content %}
+<div class="card narrow">
+  <h2>登入</h2>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <label>帳號</label>
-  <input type="text" name="username" autofocus required>
-  <label>密碼</label>
-  <input type="password" name="password" required>
-  <button type="submit">登入</button>
-</form>
-</body>
-</html>
+  <form method="post" action="{{ url_for('login', next=request.args.get('next', '')) }}">
+    <label>帳號</label>
+    <input type="text" name="username" autofocus required autocomplete="username">
+    <label>密碼</label>
+    <input type="password" name="password" required autocomplete="current-password">
+    <div class="form-actions">
+      <button type="submit">登入</button>
+      <a href="{{ url_for('dashboard') }}" class="link-btn">先瀏覽就好</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

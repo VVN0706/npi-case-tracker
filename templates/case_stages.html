@@ -1,9 +1,12 @@
 {% extends 'base.html' %}
-{% block title %}編輯各階段 - NPI 案件追蹤{% endblock %}
+{% block title %}{{ '各階段時程' if readonly else '編輯各階段' }} - NPI 案件追蹤{% endblock %}
 {% block content %}
 
 <div class="card">
-  <h2>編輯各階段時程與狀態：{{ case.title }}</h2>
+  <h2>{{ '各階段時程與狀態' if readonly else '編輯各階段時程與狀態' }}：{{ case.title }}</h2>
+  {% if readonly %}
+  <p class="readonly-note">{% if g.current_user %}只有負責工程師或管理員可以修改，你目前只能檢視。{% else %}目前未登入，只能檢視。要修改請由右上角登入。{% endif %}</p>
+  {% endif %}
   {% if saved %}<p class="success">已儲存</p>{% endif %}
   <p class="hint">
     「計畫/實際日」為目前預估或實際達成日；Baseline 為原始承諾日（用來算延遲天數），第一次填日期時會自動帶入，一般不要改，客戶正式改期時才「重設 Baseline」。<br>
@@ -12,6 +15,7 @@
   </p>
 
   <form method="post" id="stagesForm">
+    <fieldset class="plain" {{ 'disabled' if readonly }}>
     <table class="stage-edit-table">
       <thead>
         <tr><th>階段</th><th>計畫 / 實際日</th><th>Baseline</th><th>較 Baseline</th><th>不適用</th><th>狀態判定</th><th></th></tr>
@@ -46,14 +50,19 @@
       </tbody>
     </table>
 
+    {% if not readonly %}
     <label>變更原因（會寫入變更紀錄，例如：客戶 wafer 延到 10 月）</label>
     <input type="text" name="reason">
+    {% endif %}
+    </fieldset>
 
     <div class="stage-actions">
-      <button type="submit" name="action" value="save">儲存</button>
+      {% if not readonly %}<button type="submit" name="action" value="save">儲存</button>{% endif %}
       <a href="{{ url_for('case_edit', case_id=case.id) }}" class="link-btn">返回案件</a>
+      {% if not readonly %}
       <button type="submit" name="action" value="reset_baseline" class="btn-reset"
               onclick="return confirm('確定要以目前的計畫日重設全部 Baseline 嗎？（會一併儲存畫面上的修改）');">以目前計畫日重設全部 Baseline</button>
+      {% endif %}
     </div>
   </form>
 </div>

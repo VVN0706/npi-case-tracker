@@ -222,20 +222,24 @@ button.btn-danger:hover { background: #b91c1c; }
 .success { color: var(--success); font-size: 14px; }
 .hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
-.login-body {
-  height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #1e293b, #0f172a);
-  margin: 0;
-}
-.login-box {
+.login-menu { position: relative; }
+.btn-login { background: var(--primary); color: #fff; padding: 6px 16px; }
+.login-panel {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  width: 240px;
   background: var(--card-bg);
-  padding: 40px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  width: 320px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  padding: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  z-index: 10;
 }
-.login-box h1 { font-size: 18px; margin: 0 0 20px; text-align: center; }
-.login-box button { width: 100%; margin-top: 20px; padding: 10px; }
+.login-menu.open .login-panel { display: block; }
+.login-panel label:first-child { margin-top: 0; }
+.login-panel button { width: 100%; margin-top: 14px; }
+
+fieldset.plain { border: 0; padding: 0; margin: 0; min-width: 0; }
+.readonly-note { background: #fff7ed; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 8px 14px; font-size: 13px; margin-bottom: 12px; }
